@@ -1,11 +1,16 @@
+// src/lib/auth.ts
+
 import jwt from "jsonwebtoken";
 
 const JWT_SECRET = process.env.JWT_SECRET || "supersecret";
 
 export interface JwtUserPayload {
   id: number | string;
-  email: string;
-  role: string; // e.g. "customer" | "admin"
+  email?: string;
+  username?: string;
+  role?: string;
+  role_id?: number;
+  role_name?: string;
 }
 
 export function signToken(user: JwtUserPayload) {
@@ -13,7 +18,10 @@ export function signToken(user: JwtUserPayload) {
     {
       id: user.id,
       email: user.email,
-      role: user.role,
+      username: user.username,
+      // normalize: some code might use role, some might use role_name
+      role: user.role ?? user.role_name,
+      role_id: user.role_id,
     },
     JWT_SECRET,
     { expiresIn: "7d" }

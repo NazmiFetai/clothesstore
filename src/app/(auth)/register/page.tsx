@@ -24,7 +24,8 @@ interface RegisterBody {
   name: string;
   email: string;
   password: string;
-  role?: "customer" | "admin";
+  // We intentionally do NOT let the user choose admin role here.
+  // role?: "customer" | "admin";
 }
 
 export default function RegisterPage() {
@@ -52,7 +53,9 @@ export default function RegisterPage() {
         name,
         email,
         password,
-        // role: "customer", // optional; backend defaults to "customer" per spec
+        // Let backend assign the default client/simple role.
+        // If your backend requires a role, you can uncomment and adapt:
+        // role: "customer",
       };
 
       await apiFetch("/api/auth/register", {
@@ -60,8 +63,8 @@ export default function RegisterPage() {
         body: JSON.stringify(body),
       });
 
-      // success -> go to login
-      router.push("/login");
+      // success -> go to login with client mode preselected
+      router.push("/login?mode=client");
     } catch (err: unknown) {
       const msg =
         err instanceof Error ? err.message : "Registration failed. Try again.";
@@ -75,9 +78,9 @@ export default function RegisterPage() {
     <div className="min-h-screen flex items-center justify-center bg-muted px-4">
       <Card className="w-full max-w-md">
         <CardHeader>
-          <CardTitle>Register</CardTitle>
+          <CardTitle>Client registration</CardTitle>
           <CardDescription>
-            Create a new account to start shopping.
+            Create a client account to place orders in the shop.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -89,7 +92,7 @@ export default function RegisterPage() {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="name">Name</Label>
+              <Label htmlFor="name">Full name</Label>
               <Input
                 id="name"
                 value={name}
@@ -127,7 +130,7 @@ export default function RegisterPage() {
             </div>
 
             <Button type="submit" className="w-full" disabled={submitting}>
-              {submitting ? "Creating account..." : "Create account"}
+              {submitting ? "Creating account..." : "Create client account"}
             </Button>
           </form>
         </CardContent>
@@ -135,10 +138,10 @@ export default function RegisterPage() {
           <span>
             Already have an account?{" "}
             <a
-              href="/login"
+              href="/login?mode=client"
               className="underline underline-offset-4 hover:text-foreground"
             >
-              Login
+              Login as client
             </a>
           </span>
         </CardFooter>

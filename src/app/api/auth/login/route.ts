@@ -6,10 +6,8 @@ import { signToken } from "../../../../lib/auth";
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-
     const { email, password } = body ?? {};
 
-    // validate body
     if (!email || !password) {
       return NextResponse.json(
         { error: "email and password are required" },
@@ -21,10 +19,12 @@ export async function POST(req: Request) {
       `
       SELECT 
         u.id,
+        u.username,
         u.username AS name,
         u.email,
         u.password_hash,
-        r.name AS role
+        u.role_id,
+        r.name AS role_name
       FROM users u
       LEFT JOIN roles r ON u.role_id = r.id
       WHERE u.email = $1
@@ -47,21 +47,17 @@ export async function POST(req: Request) {
       );
     }
 
-    // token contains the minimal stuff you actually need on the backend
-    const token = signToken({
-      id: user.id,
-      email: user.email,
-      role: user.role,
-    });
+    // IMPORTANT: pass the full DB user row so token has id, username, role_id, role_name, email
+    const token = signToken(user);
 
-    // response matches what we use on the frontend: id, name, email, role
+    // Frontend still gets a clean user object with a simple 'role' string
     return NextResponse.json({
       token,
       user: {
         id: user.id,
         name: user.name,
         email: user.email,
-        role: user.role,
+        role: user.role_name, // e.g. "admin"
       },
     });
   } catch (err: any) {

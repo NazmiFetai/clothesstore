@@ -11,6 +11,7 @@ export async function apiFetch<T>(
   token?: string | null
 ): Promise<T> {
   const url = `${API_BASE_URL}${path}`;
+  
 
   const headers = new Headers(options.headers || {});
   if (!headers.has("Content-Type") && options.body) {
@@ -20,7 +21,8 @@ export async function apiFetch<T>(
     headers.set("Accept", "application/json");
   }
   if (token) {
-    headers.set("Authorization", `Bearer ${token}`);
+   headers.set("Authorization", `Bearer ${token}`);
+  // headers["Authorization"] = token;
   }
 
   const res = await fetch(url, {

@@ -2,9 +2,14 @@
 
 "use client";
 
-import { useState, type FormEvent, type ChangeEvent } from "react";
+import {
+  useState,
+  type FormEvent,
+  type ChangeEvent,
+  useEffect,
+} from "react";
 import { useRouter } from "next/navigation";
-import useAuth from "@/hooks/use-auth"; // <- default import
+import useAuth from "@/hooks/use-auth";
 import { apiFetch } from "@/lib/api-client";
 import type { Product } from "@/lib/types";
 
@@ -13,6 +18,26 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  Table,
+  TableHeader,
+  TableRow,
+  TableHead,
+  TableBody,
+  TableCell,
+} from "@/components/ui/table";
+
+type SizeRow = { id: number; name: string };
+type ColorRow = { id: number; name: string };
+
+type EditableVariant = {
+  tempId: string;
+  sizeId: string; // size_id from DB as string
+  colorId: string; // color_id from DB as string
+  sku: string;
+  price: string;
+  initialQuantity: string;
+};
 
 export default function AdminNewProductPage() {
   const router = useRouter();
@@ -26,13 +51,77 @@ export default function AdminNewProductPage() {
   const [brandId, setBrandId] = useState("");
   const [genderId, setGenderId] = useState("");
 
+  const [sizes, setSizes] = useState<SizeRow[]>([]);
+  const [colors, setColors] = useState<ColorRow[]>([]);
+
+  const [variants, setVariants] = useState<EditableVariant[]>([]);
+
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [lookupsLoading, setLookupsLoading] = useState(false);
 
-  // widen role to string so TS stops whining about literal union mismatch
   const role = (user?.role ?? "") as string;
   const isAdmin = role === "admin" || role === "advanced_user";
 
+  // ---------- Load sizes & colors ----------
+  useEffect(() => {
+    async function loadLookups() {
+      setLookupsLoading(true);
+      try {
+        const [sz, col] = await Promise.all([
+          apiFetch<SizeRow[]>("/api/sizes"),
+          apiFetch<ColorRow[]>("/api/colors"),
+        ]);
+        setSizes(sz ?? []);
+        setColors(col ?? []);
+      } catch (err) {
+        console.error("Failed to load sizes/colors:", err);
+      } finally {
+        setLookupsLoading(false);
+      }
+    }
+
+    void loadLookups();
+  }, []);
+
+  // ---------- Variant helpers ----------
+  function addVariant() {
+    if (!sizes.length || !colors.length) {
+      setFormError("You must define sizes and colors in the database first.");
+      return;
+    }
+
+    const firstSize = String(sizes[0].id);
+    const firstColor = String(colors[0].id);
+
+    setVariants((prev) => [
+      ...prev,
+      {
+        tempId: crypto.randomUUID(),
+        sizeId: firstSize,
+        colorId: firstColor,
+        sku: "",
+        price: defaultPrice || "",
+        initialQuantity: "0",
+      },
+    ]);
+  }
+
+  function updateVariant(
+    tempId: string,
+    field: keyof EditableVariant,
+    value: string
+  ) {
+    setVariants((prev) =>
+      prev.map((v) => (v.tempId === tempId ? { ...v, [field]: value } : v))
+    );
+  }
+
+  function removeVariant(tempId: string) {
+    setVariants((prev) => prev.filter((v) => v.tempId !== tempId));
+  }
+
+  // ---------- Submit ----------
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setFormError(null);
@@ -70,8 +159,48 @@ export default function AdminNewProductPage() {
       return;
     }
 
-    // 🔥 This matches your backend exactly:
-    // name, default_price, description, category_id, brand_id, gender_id
+    // Build variants payload
+    const variantPayload = variants
+      .map((v) => {
+        const price = v.price ? Number(v.price) : priceNumber;
+        const qty = v.initialQuantity ? Number(v.initialQuantity) : 0;
+
+        if (Number.isNaN(price) || price < 0) {
+          setFormError("Variant price must be a valid number.");
+          return null;
+        }
+        if (Number.isNaN(qty) || qty < 0) {
+          setFormError("Variant initial quantity must be a valid number.");
+          return null;
+        }
+
+        const size_id = v.sizeId ? Number(v.sizeId) : null;
+        const color_id = v.colorId ? Number(v.colorId) : null;
+
+        if (size_id === null || Number.isNaN(size_id)) {
+          setFormError("Each variant must have a valid size.");
+          return null;
+        }
+        if (color_id === null || Number.isNaN(color_id)) {
+          setFormError("Each variant must have a valid color.");
+          return null;
+        }
+
+        return {
+          size_id,
+          color_id,
+          sku: v.sku || null,
+          price,
+          initial_quantity: qty,
+        };
+      })
+      .filter(Boolean);
+
+    if (variantPayload.includes(null as any)) {
+      // Some variant failed validation, error already set
+      return;
+    }
+
     const body = {
       name,
       description: description || null,
@@ -79,6 +208,7 @@ export default function AdminNewProductPage() {
       category_id,
       brand_id,
       gender_id,
+      variants: variantPayload,
     };
 
     setSubmitting(true);
@@ -91,8 +221,6 @@ export default function AdminNewProductPage() {
         },
         token
       );
-      //console.log(body)
-
       router.push("/admin/products");
     } catch (err: unknown) {
       const msg =
@@ -104,7 +232,7 @@ export default function AdminNewProductPage() {
   }
 
   return (
-    <div className="space-y-4 max-w-2xl">
+    <div className="space-y-4 max-w-3xl">
       <div className="flex items-center justify-between gap-2">
         <h2 className="text-lg font-semibold">New product</h2>
         <Button
@@ -123,6 +251,7 @@ export default function AdminNewProductPage() {
       )}
 
       <form onSubmit={handleSubmit} className="space-y-6">
+        {/* Basic fields */}
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2 sm:col-span-2">
             <Label htmlFor="name">Name</Label>
@@ -206,6 +335,135 @@ export default function AdminNewProductPage() {
               disabled={submitting}
             />
           </div>
+        </div>
+
+        {/* Variants editor */}
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold">Variants</h3>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={addVariant}
+              disabled={submitting || lookupsLoading}
+            >
+              Add variant
+            </Button>
+          </div>
+
+          {variants.length === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              No variants yet. Click &quot;Add variant&quot; to define size,
+              color, price, and initial stock.
+            </p>
+          ) : (
+            <div className="rounded-md border overflow-hidden">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Size</TableHead>
+                    <TableHead>Color</TableHead>
+                    <TableHead>SKU</TableHead>
+                    <TableHead className="text-right">Price</TableHead>
+                    <TableHead className="text-right">
+                      Initial quantity
+                    </TableHead>
+                    <TableHead className="w-[80px]" />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {variants.map((v) => (
+                    <TableRow key={v.tempId}>
+                      <TableCell>
+                        <select
+                          className="border rounded-md px-2 py-1 text-xs bg-background w-full"
+                          value={v.sizeId}
+                          onChange={(e) =>
+                            updateVariant(v.tempId, "sizeId", e.target.value)
+                          }
+                          disabled={submitting}
+                        >
+                          {sizes.map((s) => (
+                            <option key={s.id} value={s.id}>
+                              {s.name}
+                            </option>
+                          ))}
+                        </select>
+                      </TableCell>
+                      <TableCell>
+                        <select
+                          className="border rounded-md px-2 py-1 text-xs bg-background w-full"
+                          value={v.colorId}
+                          onChange={(e) =>
+                            updateVariant(v.tempId, "colorId", e.target.value)
+                          }
+                          disabled={submitting}
+                        >
+                          {colors.map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.name}
+                            </option>
+                          ))}
+                        </select>
+                      </TableCell>
+                      <TableCell>
+                        <Input
+                          value={v.sku}
+                          onChange={(e) =>
+                            updateVariant(v.tempId, "sku", e.target.value)
+                          }
+                          className="text-xs"
+                          disabled={submitting}
+                        />
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={v.price}
+                          onChange={(e) =>
+                            updateVariant(v.tempId, "price", e.target.value)
+                          }
+                          className="text-xs"
+                          disabled={submitting}
+                        />
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Input
+                          type="number"
+                          min="0"
+                          value={v.initialQuantity}
+                          onChange={(e) =>
+                            updateVariant(
+                              v.tempId,
+                              "initialQuantity",
+                              e.target.value
+                            )
+                          }
+                          className="text-xs"
+                          disabled={submitting}
+                        />
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="text-xs"
+                          onClick={() => removeVariant(v.tempId)}
+                          disabled={submitting}
+                        >
+                          Remove
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
         </div>
 
         <Button type="submit" disabled={submitting || !isAdmin}>

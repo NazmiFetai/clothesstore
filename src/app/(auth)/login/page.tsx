@@ -43,11 +43,11 @@ export default function LoginPage() {
     setSubmitting(true);
     try {
       const result = await login(email, password);
+      const role = result.user.role;
 
-      // redirect based on role or query param
       if (redirectTo) {
-        router.push(redirectTo);
-      } else if (result.user.role === "admin") {
+      router.push(redirectTo);
+      } else if (role === "admin" || role === "advanced_user") {
         router.push("/admin");
       } else {
         router.push("/");

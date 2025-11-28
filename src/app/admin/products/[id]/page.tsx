@@ -17,8 +17,24 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  Table,
+  TableHeader,
+  TableRow,
+  TableHead,
+  TableBody,
+  TableCell,
+} from "@/components/ui/table";
 
-// Match what /api/products/:id actually returns
+type AdminProductVariant = {
+  id: number;
+  size_id: number | null;
+  color_id: number | null;
+  sku: string | null;
+  price: string | number;
+  initial_quantity: number;
+};
+
 type AdminProduct = {
   id: number | string;
   name: string;
@@ -30,14 +46,27 @@ type AdminProduct = {
   active?: boolean;
   created_at?: string;
   updated_at?: string;
-  deleted_at?: string | null;
-  variants?: unknown[] | null;
+  variants?: AdminProductVariant[] | null;
+};
+
+type SizeRow = { id: number; name: string };
+type ColorRow = { id: number; name: string };
+
+type EditableVariant = {
+  id?: number;
+  tempId: string;
+  sizeId: string;
+  colorId: string;
+  sku: string;
+  price: string;
+  initialQuantity: string;
+  deleted?: boolean;
 };
 
 export default function AdminEditProductPage() {
   const router = useRouter();
   const params = useParams();
-  const id = Number(params.id); // numeric for PUT / DB
+  const id = Number(params.id);
 
   const { token, user } = useAuth();
   const role = (user?.role ?? "") as string;
@@ -55,16 +84,34 @@ export default function AdminEditProductPage() {
   const [brandId, setBrandId] = useState("");
   const [genderId, setGenderId] = useState("");
 
-  // --------- LOAD PRODUCT ----------
+  const [sizes, setSizes] = useState<SizeRow[]>([]);
+  const [colors, setColors] = useState<ColorRow[]>([]);
+  const [variants, setVariants] = useState<EditableVariant[]>([]);
+  const [lookupsLoading, setLookupsLoading] = useState(false);
+
+  // --------- Load lookups + product ----------
   useEffect(() => {
     if (!id) return;
 
-    async function loadProduct() {
+    async function loadAll() {
       setLoading(true);
       setFormError(null);
 
       try {
-        // use the real detail endpoint
+        setLookupsLoading(true);
+        const [sz, col] = await Promise.all([
+          apiFetch<SizeRow[]>("/api/sizes"),
+          apiFetch<ColorRow[]>("/api/colors"),
+        ]);
+        setSizes(sz ?? []);
+        setColors(col ?? []);
+      } catch (err) {
+        console.error("Failed to load sizes/colors:", err);
+      } finally {
+        setLookupsLoading(false);
+      }
+
+      try {
         const p = await apiFetch<AdminProduct>(`/api/products/${id}`);
 
         setName(p.name ?? "");
@@ -91,6 +138,29 @@ export default function AdminEditProductPage() {
             ? String(p.gender_id)
             : ""
         );
+
+        const defaultPriceFromProduct =
+  p.default_price !== null && p.default_price !== undefined
+    ? String(p.default_price)
+    : "";
+
+const vList: EditableVariant[] = (p.variants ?? []).map((v) => ({
+  id: v.id,
+  tempId: `${v.id}`,
+  sizeId: v.size_id != null ? String(v.size_id) : "",
+  colorId: v.color_id != null ? String(v.color_id) : "",
+  sku: v.sku ?? "",
+  price:
+    v.price !== null && v.price !== undefined
+      ? String(v.price)
+      : defaultPriceFromProduct,
+  initialQuantity: String(v.initial_quantity ?? 0),
+}));
+
+setDefaultPrice(defaultPriceFromProduct);
+setVariants(vList);
+
+        setVariants(vList);
       } catch (err: unknown) {
         const msg =
           err instanceof Error ? err.message : "Failed to load product.";
@@ -100,8 +170,61 @@ export default function AdminEditProductPage() {
       }
     }
 
-    void loadProduct();
+    void loadAll();
   }, [id]);
+
+  // --------- Variant helpers ----------
+  function addVariant() {
+    if (!sizes.length || !colors.length) {
+      setFormError("You must define sizes and colors in the database first.");
+      return;
+    }
+
+    const firstSize = String(sizes[0].id);
+    const firstColor = String(colors[0].id);
+
+    setVariants((prev) => [
+      ...prev,
+      {
+        tempId: crypto.randomUUID(),
+        sizeId: firstSize,
+        colorId: firstColor,
+        sku: "",
+        price: defaultPrice || "",
+        initialQuantity: "0",
+      },
+    ]);
+  }
+
+  function updateVariant(
+    tempId: string,
+    field: keyof EditableVariant,
+    value: string
+  ) {
+    setVariants((prev) =>
+      prev.map((v) => (v.tempId === tempId ? { ...v, [field]: value } : v))
+    );
+  }
+
+  function markRemoveVariant(tempId: string) {
+    setVariants((prev) =>
+      prev.map((v) =>
+        v.tempId === tempId ? { ...v, deleted: true } : v
+      )
+    );
+  }
+
+  function restoreVariant(tempId: string) {
+    setVariants((prev) =>
+      prev.map((v) =>
+        v.tempId === tempId ? { ...v, deleted: false } : v
+      )
+    );
+  }
+
+  function removeNewVariantPermanent(tempId: string) {
+    setVariants((prev) => prev.filter((v) => v.tempId !== tempId));
+  }
 
   // --------- SAVE ----------
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
@@ -141,6 +264,54 @@ export default function AdminEditProductPage() {
       return;
     }
 
+    const variantPayload = variants
+      .map((v) => {
+        // Hard-delete new ones with deleted flag
+        if (!v.id && v.deleted) return null;
+
+        const price = v.price ? Number(v.price) : default_price;
+        const qty = v.initialQuantity ? Number(v.initialQuantity) : 0;
+
+        if (Number.isNaN(price) || price < 0) {
+          setFormError("Variant price must be a valid number.");
+          return null;
+        }
+        if (Number.isNaN(qty) || qty < 0) {
+          setFormError("Variant initial quantity must be a valid number.");
+          return null;
+        }
+
+        const size_id = v.sizeId ? Number(v.sizeId) : null;
+        const color_id = v.colorId ? Number(v.colorId) : null;
+
+        if (!v.deleted) {
+          if (size_id === null || Number.isNaN(size_id)) {
+            setFormError("Each active variant must have a valid size.");
+            return null;
+          }
+          if (color_id === null || Number.isNaN(color_id)) {
+            setFormError("Each active variant must have a valid color.");
+            return null;
+          }
+        }
+
+        return {
+          id: v.id ?? undefined,
+          size_id,
+          color_id,
+          sku: v.sku || null,
+          price,
+          initial_quantity: qty,
+          _delete: !!v.deleted,
+        };
+      })
+      .filter(Boolean);
+
+    if (variantPayload.includes(null as any)) {
+      // Validation already set an error
+      return;
+    }
+
     const body = {
       id,
       name,
@@ -149,12 +320,13 @@ export default function AdminEditProductPage() {
       category_id,
       brand_id,
       gender_id,
+      variants: variantPayload,
     };
 
     setSaving(true);
     try {
       await apiFetch<AdminProduct>(
-        "/api/products",
+        `/api/products/${id}`,
         {
           method: "PUT",
           body: JSON.stringify(body),
@@ -183,7 +355,7 @@ export default function AdminEditProductPage() {
 
     try {
       await apiFetch<{ message: string }>(
-        `/api/products?id=${id}`,
+        `/api/products/${id}`,
         { method: "DELETE" },
         token
       );
@@ -199,14 +371,14 @@ export default function AdminEditProductPage() {
 
   if (loading) {
     return (
-      <div className="space-y-4 max-w-2xl">
+      <div className="space-y-4 max-w-3xl">
         <p className="text-sm text-muted-foreground">Loading product…</p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-4 max-w-2xl">
+    <div className="space-y-4 max-w-3xl">
       <div className="flex items-center justify-between gap-2">
         <h2 className="text-lg font-semibold">Edit product #{id}</h2>
         <div className="flex gap-2">
@@ -235,6 +407,7 @@ export default function AdminEditProductPage() {
       )}
 
       <form onSubmit={handleSubmit} className="space-y-6">
+        {/* Base fields */}
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2 sm:col-span-2">
             <Label htmlFor="name">Name</Label>
@@ -315,6 +488,169 @@ export default function AdminEditProductPage() {
               disabled={saving}
             />
           </div>
+        </div>
+
+        {/* Variant editor */}
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold">Variants</h3>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={addVariant}
+              disabled={saving || lookupsLoading}
+            >
+              Add variant
+            </Button>
+          </div>
+
+          {variants.length === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              No variants defined yet. Click &quot;Add variant&quot; to create
+              one.
+            </p>
+          ) : (
+            <div className="rounded-md border overflow-hidden">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Size</TableHead>
+                    <TableHead>Color</TableHead>
+                    <TableHead>SKU</TableHead>
+                    <TableHead className="text-right">Price</TableHead>
+                    <TableHead className="text-right">
+                      Initial quantity
+                    </TableHead>
+                    <TableHead className="w-[80px]" />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {variants.map((v) => {
+                    const isNew = !v.id;
+                    const isDeleted = !!v.deleted;
+
+                    if (isNew && isDeleted) {
+                      // Hard hide new+deleted
+                      return null;
+                    }
+
+                    return (
+                      <TableRow
+                        key={v.tempId}
+                        className={isDeleted ? "opacity-50" : ""}
+                      >
+                        <TableCell>
+                          <select
+                            className="border rounded-md px-2 py-1 text-xs bg-background w-full"
+                            value={v.sizeId}
+                            onChange={(e) =>
+                              updateVariant(v.tempId, "sizeId", e.target.value)
+                            }
+                            disabled={saving || isDeleted}
+                          >
+                            {sizes.map((s) => (
+                              <option key={s.id} value={s.id}>
+                                {s.name}
+                              </option>
+                            ))}
+                          </select>
+                        </TableCell>
+                        <TableCell>
+                          <select
+                            className="border rounded-md px-2 py-1 text-xs bg-background w-full"
+                            value={v.colorId}
+                            onChange={(e) =>
+                              updateVariant(
+                                v.tempId,
+                                "colorId",
+                                e.target.value
+                              )
+                            }
+                            disabled={saving || isDeleted}
+                          >
+                            {colors.map((c) => (
+                              <option key={c.id} value={c.id}>
+                                {c.name}
+                              </option>
+                            ))}
+                          </select>
+                        </TableCell>
+                        <TableCell>
+                          <Input
+                            value={v.sku}
+                            onChange={(e) =>
+                              updateVariant(v.tempId, "sku", e.target.value)
+                            }
+                            className="text-xs"
+                            disabled={saving || isDeleted}
+                          />
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            value={v.price}
+                            onChange={(e) =>
+                              updateVariant(v.tempId, "price", e.target.value)
+                            }
+                            className="text-xs"
+                            disabled={saving || isDeleted}
+                          />
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Input
+                            type="number"
+                            min="0"
+                            value={v.initialQuantity}
+                            onChange={(e) =>
+                              updateVariant(
+                                v.tempId,
+                                "initialQuantity",
+                                e.target.value
+                              )
+                            }
+                            className="text-xs"
+                            disabled={saving || isDeleted}
+                          />
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {isDeleted ? (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="text-xs"
+                              onClick={() => restoreVariant(v.tempId)}
+                              disabled={saving}
+                            >
+                              Undo
+                            </Button>
+                          ) : (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="text-xs"
+                              onClick={() =>
+                                v.id
+                                  ? markRemoveVariant(v.tempId)
+                                  : removeNewVariantPermanent(v.tempId)
+                              }
+                              disabled={saving}
+                            >
+                              Remove
+                            </Button>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          )}
         </div>
 
         <Button type="submit" disabled={saving || !isAdmin}>

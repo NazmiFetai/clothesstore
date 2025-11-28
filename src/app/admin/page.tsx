@@ -18,7 +18,15 @@ import {
 } from "@/components/ui/table";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
-type OrdersListResponse = PaginatedResponse<Order> | Order[];
+// Extend Order with client + user fields returned from /api/orders
+type RecentOrder = Order & {
+  first_name?: string | null;
+  last_name?: string | null;
+  client_email?: string | null;
+  created_by_username?: string | null;
+};
+
+type OrdersListResponse = PaginatedResponse<RecentOrder> | RecentOrder[];
 
 export default function AdminDashboardPage() {
   const { token, user } = useAuth();
@@ -26,23 +34,13 @@ export default function AdminDashboardPage() {
   const isAdmin = role === "admin" || role === "advanced_user";
 
   const [report, setReport] = useState<DailyReport | null>(null);
-  const [recentOrders, setRecentOrders] = useState<Order[]>([]);
+  const [recentOrders, setRecentOrders] = useState<RecentOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  if (!isAdmin) {
-    return (
-      <div className="space-y-4">
-        <h1 className="text-2xl font-semibold">Admin dashboard</h1>
-        <p className="text-sm text-muted-foreground">
-          You do not have permission to view this page.
-        </p>
-      </div>
-    );
-  }
-
+  // ✅ Hooks are ALWAYS called, regardless of isAdmin
   useEffect(() => {
-    if (!token) return;
+    if (!token || !isAdmin) return;
 
     async function load() {
       setLoading(true);
@@ -72,12 +70,14 @@ export default function AdminDashboardPage() {
         if (Array.isArray(ordersRes)) {
           setRecentOrders(ordersRes);
         } else {
-          const r = ordersRes as PaginatedResponse<Order>;
+          const r = ordersRes as PaginatedResponse<RecentOrder>;
           setRecentOrders(r.data ?? []);
         }
       } catch (err: unknown) {
         const msg =
-          err instanceof Error ? err.message : "Failed to load dashboard data.";
+          err instanceof Error
+            ? err.message
+            : "Failed to load dashboard data.";
         setError(msg);
       } finally {
         setLoading(false);
@@ -85,7 +85,7 @@ export default function AdminDashboardPage() {
     }
 
     void load();
-  }, [token]);
+  }, [token, isAdmin]);
 
   // ------ SAFE REVENUE LABEL ------
   const revenueLabel = (() => {
@@ -96,6 +96,18 @@ export default function AdminDashboardPage() {
     if (Number.isNaN(n)) return "0.00";
     return n.toFixed(2);
   })();
+
+  // ✅ Now it’s safe to conditionally return AFTER hooks
+  if (!isAdmin) {
+    return (
+      <div className="space-y-4">
+        <h1 className="text-2xl font-semibold">Admin dashboard</h1>
+        <p className="text-sm text-muted-foreground">
+          You do not have permission to view this page.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -193,11 +205,14 @@ export default function AdminDashboardPage() {
                 })();
 
                 const clientLabel =
-                  o.client_id != null
+                  [o.first_name, o.last_name].filter(Boolean).join(" ") ||
+                  o.client_email ||
+                  o.created_by_username ||
+                  (o.client_id != null
                     ? `Client #${o.client_id}`
                     : o.created_by != null
                     ? `User #${o.created_by}`
-                    : "—";
+                    : "—");
 
                 return (
                   <TableRow key={o.id}>

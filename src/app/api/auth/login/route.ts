@@ -1,3 +1,5 @@
+// src/app/api/auth/login/route.ts
+
 import { NextResponse } from "next/server";
 import bcrypt from "bcrypt";
 import db from "../../../../lib/db";
@@ -47,17 +49,17 @@ export async function POST(req: Request) {
       );
     }
 
-    // IMPORTANT: pass the full DB user row so token has id, username, role_id, role_name, email
+    // token will contain id, username, role_id
     const token = signToken(user);
 
-    // Frontend still gets a clean user object with a simple 'role' string
     return NextResponse.json({
       token,
       user: {
         id: user.id,
         name: user.name,
         email: user.email,
-        role: user.role_name, // e.g. "admin"
+        // This is what the frontend sees as "role"
+        role: user.role_name, // "admin", "advanced_user", "simple_user"
       },
     });
   } catch (err: any) {

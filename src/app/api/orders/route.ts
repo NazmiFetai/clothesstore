@@ -2,49 +2,52 @@
 import { NextResponse } from "next/server";
 import db from "../../../lib/db";
 
-// GET /api/orders
-export async function GET(req: Request) {
-  try {
-    const url = new URL(req.url);
-    const limit = Number(url.searchParams.get("limit") || "50");
-    const page = Number(url.searchParams.get("page") || "1");
-    const safeLimit = Number.isNaN(limit) || limit <= 0 ? 50 : limit;
-    const safePage = Number.isNaN(page) || page <= 0 ? 1 : page;
-    const offset = (safePage - 1) * safeLimit;
+/* ------------------------ GET /api/orders ------------------------ */
+export async function GET() {
+  const res = await db.query(
+    `
+    SELECT
+      o.*,
+      c.first_name,
+      c.last_name,
+      c.email AS client_email,
+      (
+        SELECT json_agg(row_to_json(oi))
+        FROM order_items oi
+        WHERE oi.order_id = o.id
+      ) AS items
+    FROM orders o
+    LEFT JOIN clients c ON c.id = o.client_id
+    ORDER BY o.created_at DESC
+    `
+  );
 
-    const res = await db.query(
-      `SELECT 
-         o.*,
-         -- full name + email from clients
-         c.first_name,
-         c.last_name,
-         c.email AS client_email,
-         (
-           SELECT json_agg(row_to_json(oi))
-           FROM order_items oi
-           WHERE oi.order_id = o.id
-         ) AS items
-       FROM orders o
-       LEFT JOIN clients c ON c.id = o.client_id
-       ORDER BY o.created_at DESC
-       LIMIT $1 OFFSET $2`,
-      [safeLimit, offset]
-    );
-
-    return NextResponse.json(res.rows, { status: 200 });
-  } catch (err: any) {
-    console.error("GET /api/orders error:", err);
-    return NextResponse.json(
-      { error: "Failed to fetch orders" },
-      { status: 500 }
-    );
-  }
+  return NextResponse.json(res.rows);
 }
 
-// POST /api/orders
+/* ------------------------ POST /api/orders ------------------------ */
+// Body:
+// {
+//   client_id?: number,
+//   created_by?: number,
+//   payment_method: string,
+//   status?: string,
+//   client?: {
+//     first_name?: string,
+//     last_name?: string,
+//     email?: string,
+//     phone?: string,
+//     address?: string,
+//     city?: string,
+//     postal_code?: string,
+//     country?: string
+//   },
+//   items: [{ product_variant_id, unit_price, quantity }]
+// }
+
 export async function POST(req: Request) {
-  const body = await req.json(); // { client_id, created_by, payment_method, items: [...] }
-  const client = await db.getClient();
+  const body = await req.json();
+  const clientConn = await db.getClient();
 
   try {
     if (
@@ -58,10 +61,67 @@ export async function POST(req: Request) {
       );
     }
 
-    // Validate client_id (if provided)
-    if (body.client_id != null) {
+    const clientData = body.client ?? null;
+    let clientId = body.client_id ?? null;
+
+    // If we have client data with an email, create or reuse clients row
+    if (!clientId && clientData && clientData.email) {
+      const existing = await db.query(
+        "SELECT id FROM clients WHERE email = $1 LIMIT 1",
+        [clientData.email]
+      );
+
+      if ((existing.rowCount ?? 0) > 0) {
+        // <-- FIX HERE
+        clientId = existing.rows[0].id;
+
+        // Optional: update existing client with latest details
+        await db.query(
+          `UPDATE clients
+       SET first_name = COALESCE($2, first_name),
+           last_name = COALESCE($3, last_name),
+           phone = COALESCE($4, phone),
+           address = COALESCE($5, address),
+           city = COALESCE($6, city),
+           postal_code = COALESCE($7, postal_code),
+           country = COALESCE($8, country)
+       WHERE id = $1`,
+          [
+            clientId,
+            clientData.first_name ?? null,
+            clientData.last_name ?? null,
+            clientData.phone ?? null,
+            clientData.address ?? null,
+            clientData.city ?? null,
+            clientData.postal_code ?? null,
+            clientData.country ?? null,
+          ]
+        );
+      } else {
+        const inserted = await db.query(
+          `INSERT INTO clients
+        (first_name, last_name, email, phone, address, city, postal_code, country)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+       RETURNING id`,
+          [
+            clientData.first_name ?? null,
+            clientData.last_name ?? null,
+            clientData.email ?? null,
+            clientData.phone ?? null,
+            clientData.address ?? null,
+            clientData.city ?? null,
+            clientData.postal_code ?? null,
+            clientData.country ?? null,
+          ]
+        );
+        clientId = inserted.rows[0].id;
+      }
+    }
+
+    // Validate clientId if provided but no client data to auto-create
+    if (clientId != null && !clientData) {
       const c = await db.query("SELECT id FROM clients WHERE id = $1", [
-        body.client_id,
+        clientId,
       ]);
       if (c.rowCount === 0) {
         return NextResponse.json(
@@ -71,7 +131,7 @@ export async function POST(req: Request) {
       }
     }
 
-    // Validate created_by (if provided)
+    // Validate created_by if provided
     if (body.created_by != null) {
       const u = await db.query("SELECT id FROM users WHERE id = $1", [
         body.created_by,
@@ -84,13 +144,14 @@ export async function POST(req: Request) {
       }
     }
 
-    await client.query("BEGIN");
+    await clientConn.query("BEGIN");
 
-    const orderRes = await client.query(
+    const orderRes = await clientConn.query(
       `INSERT INTO orders (client_id, created_by, status, payment_method, created_at)
-       VALUES ($1,$2,$3,$4,now()) RETURNING id`,
+       VALUES ($1,$2,$3,$4,now())
+       RETURNING id`,
       [
-        body.client_id ?? null,
+        clientId ?? null,
         body.created_by ?? null,
         body.status ?? "pending",
         body.payment_method ?? null,
@@ -101,32 +162,53 @@ export async function POST(req: Request) {
     let total = 0;
 
     for (const it of body.items) {
-      const subtotal = Number(it.unit_price) * Number(it.quantity);
+      const unitPrice = Number(it.unit_price);
+      const qty = Number(it.quantity);
+
+      if (!Number.isFinite(unitPrice) || !Number.isFinite(qty) || qty <= 0) {
+        await clientConn.query("ROLLBACK");
+        return NextResponse.json(
+          { error: "Invalid item price or quantity" },
+          { status: 400 }
+        );
+      }
+
+      const subtotal = unitPrice * qty;
       total += subtotal;
-      await client.query(
+
+      await clientConn.query(
         `INSERT INTO order_items (order_id, product_variant_id, unit_price, quantity, subtotal)
          VALUES ($1,$2,$3,$4,$5)`,
-        [orderId, it.product_variant_id, it.unit_price, it.quantity, subtotal]
+        [orderId, it.product_variant_id, unitPrice, qty, subtotal]
       );
     }
 
-    await client.query(`UPDATE orders SET total_amount = $1 WHERE id = $2`, [
-      total,
-      orderId,
-    ]);
+    await clientConn.query(
+      `UPDATE orders SET total_amount = $1 WHERE id = $2`,
+      [total, orderId]
+    );
 
-    await client.query("COMMIT");
+    await clientConn.query("COMMIT");
 
-    const res = await db.query(`SELECT * FROM orders WHERE id = $1`, [orderId]);
+    const res = await db.query(
+      `SELECT o.*,
+        (SELECT json_agg(row_to_json(oi))
+         FROM order_items oi
+         WHERE oi.order_id = o.id) AS items
+       FROM orders o
+       WHERE o.id = $1`,
+      [orderId]
+    );
+
     return NextResponse.json(res.rows[0], { status: 201 });
   } catch (err: any) {
-    await client.query("ROLLBACK");
+    await clientConn.query("ROLLBACK");
     console.error("POST /api/orders error:", err);
     return NextResponse.json(
       { error: "Error creating order", details: err?.message ?? String(err) },
       { status: 500 }
     );
   } finally {
-    client.release();
+    clientConn.release();
   }
 }

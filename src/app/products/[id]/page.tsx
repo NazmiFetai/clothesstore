@@ -2,10 +2,12 @@
 
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import type { Product } from "@/lib/types";
 import { apiFetch } from "@/lib/api-client";
+import useCart from "@/hooks/use-cart";
+
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -17,15 +19,24 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 export default function ProductPage() {
   const router = useRouter();
-  const params = useParams(); // ✅ client-side way
-  const id = String(params.id); // id from route, e.g. /products/123
+  const params = useParams();
+  const id = String(params.id); // /products/[id]
+
+  const { addItem } = useCart();
 
   const [product, setProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const [selectedVariantId, setSelectedVariantId] = useState<number | null>(
+    null
+  );
+  const [addError, setAddError] = useState<string | null>(null);
+  const [addSuccess, setAddSuccess] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -33,17 +44,25 @@ export default function ProductPage() {
     async function loadProduct() {
       setLoading(true);
       setError(null);
+      setAddError(null);
+      setAddSuccess(null);
 
       try {
-        // 1) try the proper detail endpoint
-        const result = await apiFetch<Product>(`/api/products/${id}`);
-        setProduct(result);
+        // Primary: detail endpoint
+        const result = await apiFetch<any>(`/api/products/${id}`);
+        setProduct(result as Product);
+
+        if (Array.isArray(result?.variants) && result.variants.length > 0) {
+          const firstVariant = result.variants[0];
+          if (firstVariant && firstVariant.id != null) {
+            setSelectedVariantId(Number(firstVariant.id));
+          }
+        }
       } catch (err: unknown) {
         const msg =
           err instanceof Error ? err.message : "Failed to load product.";
 
-        // If the detail endpoint is misbehaving (400/404),
-        // fall back to fetching the list and searching client-side.
+        // Fallback: list endpoint and search client-side
         if (msg.includes("400") || msg.includes("404")) {
           try {
             const listResult = await apiFetch<any>(
@@ -53,16 +72,20 @@ export default function ProductPage() {
             let products: any[] = [];
             if (Array.isArray(listResult)) {
               products = listResult;
-            } else if (Array.isArray(listResult.data)) {
+            } else if (Array.isArray(listResult?.data)) {
               products = listResult.data;
             }
 
-            const found = products.find(
-              (p) => String((p as any).id) === id
-            );
+            const found = products.find((p) => String(p.id) === id);
 
             if (found) {
               setProduct(found as Product);
+              if (Array.isArray(found.variants) && found.variants.length > 0) {
+                const firstVariant = found.variants[0];
+                if (firstVariant && firstVariant.id != null) {
+                  setSelectedVariantId(Number(firstVariant.id));
+                }
+              }
             } else {
               setError("NOT_FOUND");
             }
@@ -76,13 +99,30 @@ export default function ProductPage() {
         } else {
           setError(msg);
         }
+      } finally {
+        setLoading(false);
       }
-
-      setLoading(false);
     }
 
     void loadProduct();
   }, [id]);
+
+  // --- Derived variant list & selected variant ---
+
+  const variants: any[] | null = useMemo(() => {
+    const v = (product as any)?.variants;
+    if (!Array.isArray(v)) return null;
+    return v;
+  }, [product]);
+
+  const hasVariants = !!variants && variants.length > 0;
+
+  const selectedVariant = useMemo(() => {
+    if (!hasVariants || selectedVariantId == null) return null;
+    return (
+      variants!.find((v) => Number(v.id) === Number(selectedVariantId)) ?? null
+    );
+  }, [hasVariants, variants, selectedVariantId]);
 
   // ------- LOADING / ERROR STATES -------
 
@@ -97,9 +137,7 @@ export default function ProductPage() {
   if (error === "NOT_FOUND") {
     return (
       <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 py-6 space-y-4">
-        <h1 className="text-2xl font-bold tracking-tight">
-          Product not found
-        </h1>
+        <h1 className="text-2xl font-bold tracking-tight">Product not found</h1>
         <p className="text-sm text-muted-foreground">
           The product you are looking for does not exist or has been removed.
         </p>
@@ -128,26 +166,92 @@ export default function ProductPage() {
     return null;
   }
 
-  // ------- PRICE NORMALIZATION -------
+  // ------- PRICE NORMALIZATION (uses default_price if present) -------
 
-  const rawPrice = (product as any).price;
+  const rawDefaultPrice =
+    (product as any).default_price ?? (product as any).price;
   const rawCurrency = (product as any).currency ?? "";
   let priceLabel = "Price on request";
-  if (rawPrice !== null && rawPrice !== undefined) {
-    const priceNumber = Number(rawPrice);
+
+  if (rawDefaultPrice !== null && rawDefaultPrice !== undefined) {
+    const priceNumber = Number(rawDefaultPrice);
     if (!Number.isNaN(priceNumber)) {
       priceLabel = `${priceNumber.toFixed(2)} ${rawCurrency}`.trim();
     }
   }
 
-  const mainImage = product.images?.[0];
-  const hasVariants =
-    Array.isArray(product.variants) && product.variants.length > 0;
+  const mainImage = product.images?.[0] || "https://picsum.photos/200/300/?blur";
+
+  // ------- ADD TO CART HANDLER -------
+
+  function handleAddToCart() {
+    setAddError(null);
+    setAddSuccess(null);
+
+    if (!product) {
+      setAddError("Product not loaded.");
+      return;
+    }
+
+    if (!hasVariants) {
+      setAddError("This product has no variants defined in the database.");
+      return;
+    }
+    if (!selectedVariant) {
+      setAddError("Please select a variant.");
+      return;
+    }
+
+    const variantId = Number(selectedVariant.id);
+    if (!Number.isFinite(variantId)) {
+      setAddError("Invalid variant ID.");
+      return;
+    }
+
+    const priceRaw =
+      selectedVariant.price ??
+      (product as any).default_price ??
+      (product as any).price ??
+      0;
+
+    const unitPrice = Number(priceRaw);
+    if (!Number.isFinite(unitPrice) || unitPrice <= 0) {
+      setAddError("Invalid price for this variant.");
+      return;
+    }
+
+    const sizeLabel =
+      selectedVariant.size_name ?? selectedVariant.size ?? null;
+    const colorLabel =
+      selectedVariant.color_name ?? selectedVariant.color ?? null;
+
+    const img = product.images?.[0];
+
+    addItem({
+      variantId,
+      productId: Number((product as any).id) || null,
+      name: product.name,
+      price: unitPrice,
+      quantity: 1,
+      sizeLabel: sizeLabel || undefined,
+      colorLabel: colorLabel || undefined,
+      imageUrl: img,
+    });
+
+    const variantTextParts: string[] = [];
+    if (sizeLabel) variantTextParts.push(`size ${sizeLabel}`);
+    if (colorLabel) variantTextParts.push(colorLabel);
+    const variantText = variantTextParts.length
+      ? ` (${variantTextParts.join(", ")})`
+      : "";
+
+    setAddSuccess(`Added "${product.name}${variantText}" to your cart.`);
+  }
 
   // ------- MAIN UI -------
 
   return (
-    <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 py-6">
+    <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 py-6 space-y-4">
       <div className="grid gap-8 lg:grid-cols-2">
         {/* LEFT: IMAGE / GALLERY */}
         <div className="space-y-4">
@@ -214,45 +318,118 @@ export default function ProductPage() {
           {hasVariants ? (
             <div className="space-y-2">
               <h2 className="text-sm font-semibold">Available variants</h2>
-              <div className="rounded-md border">
+              <div className="rounded-md border overflow-hidden">
                 <Table>
                   <TableHeader>
                     <TableRow>
                       <TableHead className="w-[120px]">SKU</TableHead>
                       <TableHead>Size</TableHead>
                       <TableHead>Color</TableHead>
+                      <TableHead className="text-right">Price</TableHead>
                       <TableHead className="text-right">Stock</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {product.variants.map((variant: any) => (
-                      <TableRow key={variant.sku}>
-                        <TableCell className="font-mono text-xs">
-                          {variant.sku}
-                        </TableCell>
-                        <TableCell>{variant.size}</TableCell>
-                        <TableCell>{variant.color}</TableCell>
-                        <TableCell className="text-right">
-                          {variant.stock}
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                    {variants!.map((variant: any) => {
+                      const vId = Number(variant.id);
+                      const isSelected =
+                        selectedVariantId != null &&
+                        Number(selectedVariantId) === vId;
+
+                      const sizeLabel =
+                        variant.size_name ?? variant.size ?? "";
+                      const colorLabel =
+                        variant.color_name ?? variant.color ?? "";
+
+                      const priceRaw =
+                        variant.price ??
+                        (product as any).default_price ??
+                        (product as any).price ??
+                        0;
+                      const priceNumber = Number(priceRaw);
+                      const priceCell = Number.isNaN(priceNumber)
+                        ? "—"
+                        : priceNumber.toFixed(2);
+
+                      const stockRaw =
+                        variant.current_quantity ??
+                        variant.initial_quantity ??
+                        variant.stock ??
+                        null;
+                      const stockCell =
+                        stockRaw === null || stockRaw === undefined
+                          ? "—"
+                          : String(stockRaw);
+
+                      return (
+                        <TableRow
+                          key={variant.id ?? variant.sku ?? Math.random()}
+                          className={
+                            "cursor-pointer " +
+                            (isSelected ? "bg-muted/60" : "")
+                          }
+                          onClick={() => {
+                            if (variant.id != null) {
+                              setSelectedVariantId(Number(variant.id));
+                              setAddError(null);
+                              setAddSuccess(null);
+                            }
+                          }}
+                        >
+                          <TableCell className="font-mono text-xs">
+                            {variant.sku ?? `#${variant.id ?? "?"}`}
+                          </TableCell>
+                          <TableCell>{sizeLabel || "—"}</TableCell>
+                          <TableCell>{colorLabel || "—"}</TableCell>
+                          <TableCell className="text-right">
+                            {priceCell}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {stockCell}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                   </TableBody>
                 </Table>
               </div>
             </div>
           ) : (
             <p className="text-xs text-muted-foreground">
-              No variant data available for this product.
+              No variant data available for this product. You won&apos;t be able
+              to add it to the cart until variants are defined in the database.
             </p>
           )}
 
-          <div className="pt-4 flex gap-2">
-            <Button className="w-full sm:w-auto" disabled>
-              Add to cart (coming soon)
+          {addError && (
+            <Alert variant="destructive">
+              <AlertDescription>{addError}</AlertDescription>
+            </Alert>
+          )}
+
+          {addSuccess && (
+            <Alert className="border-emerald-500/40 bg-emerald-500/5 text-emerald-800">
+              <AlertDescription>{addSuccess}</AlertDescription>
+            </Alert>
+          )}
+
+          <div className="pt-4 flex flex-col sm:flex-row gap-2">
+            <Button
+              className="w-full sm:w-auto"
+              onClick={handleAddToCart}
+              disabled={!hasVariants || !selectedVariant}
+            >
+              Add to cart
             </Button>
             <Button
               variant="outline"
+              className="w-full sm:w-auto"
+              onClick={() => router.push("/cart")}
+            >
+              Go to cart
+            </Button>
+            <Button
+              variant="ghost"
               className="w-full sm:w-auto"
               onClick={() => router.push("/")}
             >

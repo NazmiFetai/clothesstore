@@ -4,18 +4,31 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import  useAuth  from "@/hooks/use-auth";
+import useAuth from "@/hooks/use-auth";
+import useCart from "@/hooks/use-cart";
 import { Button } from "@/components/ui/button";
 
 const navLinks = [
   { href: "/", label: "Store" },
-  { href: "/account/orders", label: "My Orders" },
+  { href: "/orders", label: "My Orders" }, // ✅ updated path
 ];
 
 export default function Navbar() {
   const pathname = usePathname();
   const router = useRouter();
   const { user, logout } = useAuth();
+  const { items } = useCart() as any; // adjust typing if your hook is typed
+
+  const isAdmin =
+    user?.role === "admin" || user?.role === "advanced_user";
+
+  const cartCount = Array.isArray(items)
+    ? items.reduce(
+        (sum: number, item: any) =>
+          sum + (Number(item.quantity) || 0),
+        0
+      )
+    : 0;
 
   const isActive = (href: string) =>
     href === "/"
@@ -30,7 +43,7 @@ export default function Navbar() {
   return (
     <header className="border-b bg-background/80 backdrop-blur">
       <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 flex h-14 items-center justify-between gap-4">
-        {/* Left: brand */}
+        {/* Left: brand + nav */}
         <div className="flex items-center gap-3">
           <Link href="/" className="font-semibold tracking-tight">
             ClothesStore
@@ -49,7 +62,8 @@ export default function Navbar() {
                 {link.label}
               </Link>
             ))}
-            {user?.role === "admin" && (
+
+            {isAdmin && (
               <Link
                 href="/admin"
                 className={`transition-colors ${
@@ -64,8 +78,24 @@ export default function Navbar() {
           </nav>
         </div>
 
-        {/* Right: auth controls */}
+        {/* Right: cart + auth controls */}
         <div className="flex items-center gap-2">
+          {/* Cart button is always visible, even if not logged in */}
+          <Button
+            variant="ghost"
+            size="sm"
+            asChild
+          >
+            <Link href="/cart">
+              Cart
+              {cartCount > 0 && (
+                <span className="ml-1 text-xs text-muted-foreground">
+                  ({cartCount})
+                </span>
+              )}
+            </Link>
+          </Button>
+
           {user ? (
             <>
               <span className="hidden sm:inline text-sm text-muted-foreground">
@@ -81,17 +111,10 @@ export default function Navbar() {
             </>
           ) : (
             <>
-              <Button
-                variant="ghost"
-                size="sm"
-                asChild
-              >
+              <Button variant="ghost" size="sm" asChild>
                 <Link href="/login">Login</Link>
               </Button>
-              <Button
-                size="sm"
-                asChild
-              >
+              <Button size="sm" asChild>
                 <Link href="/register">Register</Link>
               </Button>
             </>

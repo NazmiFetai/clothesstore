@@ -1,9 +1,9 @@
 // src/lib/types.ts
 
-export type UserRole = "customer" | "admin";
+export type UserRole = string;
 
 export interface User {
-  id: string;
+  id: string | number;
   name: string;
   email: string;
   role: UserRole;

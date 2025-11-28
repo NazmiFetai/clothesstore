@@ -15,8 +15,8 @@ export async function GET(req: Request, { params }: Params) {
       "admin",
       "advanced_user",
     ]);
-
-    const id = Number(params.id);
+    const p = await params;
+    const id = Number(p.id);
     if (!id || Number.isNaN(id)) {
       return NextResponse.json({ error: "Invalid id" }, { status: 400 });
     }

@@ -2,9 +2,9 @@
 
 "use client";
 
-import { FormEvent, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import useAuth  from "@/hooks/use-auth";
+import { FormEvent, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import useAuth from "@/hooks/use-auth";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,7 +21,6 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 
 export default function LoginPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const { login, isLoading } = useAuth();
 
   const [email, setEmail] = useState("");
@@ -29,7 +28,15 @@ export default function LoginPage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  const redirectTo = searchParams.get("redirect") ?? "/";
+  // We'll read ?redirect=... manually from window.location
+  const redirectToRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      redirectToRef.current = params.get("redirect");
+    }
+  }, []);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -44,9 +51,10 @@ export default function LoginPage() {
     try {
       const result = await login(email, password);
       const role = result.user.role;
+      const redirectTo = redirectToRef.current ?? "/";
 
       if (redirectTo) {
-      router.push(redirectTo);
+        router.push(redirectTo);
       } else if (role === "admin" || role === "advanced_user") {
         router.push("/admin");
       } else {
@@ -54,7 +62,9 @@ export default function LoginPage() {
       }
     } catch (err: unknown) {
       const message =
-        err instanceof Error ? err.message : "Login failed. Check credentials.";
+        err instanceof Error
+          ? err.message
+          : "Login failed. Check credentials.";
       setFormError(message);
     } finally {
       setSubmitting(false);
@@ -106,11 +116,7 @@ export default function LoginPage() {
               />
             </div>
 
-            <Button
-              type="submit"
-              className="w-full"
-              disabled={disabled}
-            >
+            <Button type="submit" className="w-full" disabled={disabled}>
               {submitting ? "Signing in..." : "Sign in"}
             </Button>
           </form>

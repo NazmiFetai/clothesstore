@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import db from "../../../../lib/db";
-import { requireRoleFromHeader } from "../../../../lib/roles";
+import db from "@/lib/db";
+import { requireRoleFromHeader } from "@/lib/roles";
 
 // GET /api/discount/[id]
 export async function GET(req: Request, context: any) {
@@ -38,7 +38,15 @@ export async function PUT(req: Request, context: any) {
        active = COALESCE($7,active)
      WHERE id = $1
      RETURNING *`,
-    [id, body.name, body.type, body.value, body.start_date, body.end_date, body.active]
+    [
+      id,
+      body.name,
+      body.type,
+      body.value,
+      body.start_date,
+      body.end_date,
+      body.active,
+    ],
   );
 
   if (!res.rowCount) return new NextResponse("Not found", { status: 404 });

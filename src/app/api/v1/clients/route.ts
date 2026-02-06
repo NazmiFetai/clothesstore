@@ -1,8 +1,8 @@
 // src/app/api/clients/route.ts
 
 import { NextResponse } from "next/server";
-import db from "../../../lib/db";
-import { requireRoleFromHeader } from "../../../lib/roles";
+import db from "@/lib/db";
+import { requireRoleFromHeader } from "@/lib/roles";
 
 // GET /api/clients
 export async function GET(req: Request) {
@@ -30,7 +30,7 @@ export async function GET(req: Request) {
     console.error("GET /api/clients error:", err);
     return NextResponse.json(
       { error: "Failed to fetch clients" },
-      { status: err.status || 500 }
+      { status: err.status || 500 },
     );
   }
 }
@@ -50,7 +50,7 @@ export async function POST(req: Request) {
     if (!body.first_name && !body.last_name && !body.email) {
       return NextResponse.json(
         { error: "At least one of first_name, last_name or email is required" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -88,7 +88,7 @@ export async function POST(req: Request) {
         error: "Failed to create client",
         details: err?.message ?? String(err),
       },
-      { status: err.status || 500 }
+      { status: err.status || 500 },
     );
   } finally {
     client.release();

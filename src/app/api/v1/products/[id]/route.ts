@@ -1,9 +1,47 @@
-// app/api/products/[id]/route.ts
+// app/api/v1/products/[id]/route.ts
 export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
 import db from "@/lib/db";
 import { requireRoleFromHeader } from "@/lib/roles";
+
+type ProductDetailRow = {
+  id: number;
+  name: string;
+  description: string | null;
+  category_id: number | null;
+  brand_id: number | null;
+  gender_id: number | null;
+  default_price: string | number;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+  deleted_at?: string | null;
+  variants?: unknown;
+};
+
+function errorResponse(code: string, message: string, status: number) {
+  return NextResponse.json(
+    {
+      error: {
+        code,
+        message,
+      },
+    },
+    { status },
+  );
+}
+
+function toProductResource(row: ProductDetailRow) {
+  return {
+    ...row,
+    _links: {
+      self: { href: `/api/v1/products/${row.id}` },
+      collection: { href: `/api/v1/products` },
+      quantity: { href: `/api/v1/products/${row.id}/quantity` },
+    },
+  };
+}
 
 // -----------------------------
 // GET Product (Public)
@@ -16,7 +54,7 @@ export async function GET(
   const productId = Number(id);
 
   if (isNaN(productId)) {
-    return NextResponse.json({ error: "Invalid product id" }, { status: 400 });
+    return errorResponse("VALIDATION_ERROR", "Invalid product id.", 400);
   }
 
   const res = await db.query(
@@ -59,10 +97,12 @@ export async function GET(
   );
 
   if (!res.rowCount) {
-    return NextResponse.json({ error: "Product not found" }, { status: 404 });
+    return errorResponse("PRODUCT_NOT_FOUND", "Product not found.", 404);
   }
 
-  return NextResponse.json(res.rows[0], { status: 200 });
+  const row = res.rows[0] as ProductDetailRow;
+  const resource = toProductResource(row);
+  return NextResponse.json(resource, { status: 200 });
 }
 
 // -----------------------------
@@ -79,18 +119,21 @@ export async function PUT(
       "advanced_user",
     ]);
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: e.status || 403 });
+    return errorResponse(
+      "UNAUTHORIZED",
+      e?.message || "Not authorized.",
+      e?.status || 403,
+    );
   }
 
   const { id } = await ctx.params;
   const productId = Number(id);
 
   if (isNaN(productId)) {
-    return NextResponse.json({ error: "Invalid product id" }, { status: 400 });
+    return errorResponse("VALIDATION_ERROR", "Invalid product id.", 400);
   }
 
   const body = await req.json();
-
   const client = await db.getClient();
 
   try {
@@ -121,10 +164,10 @@ export async function PUT(
 
     if (!prodRes.rowCount) {
       await client.query("ROLLBACK");
-      return NextResponse.json({ error: "Product not found" }, { status: 404 });
+      return errorResponse("PRODUCT_NOT_FOUND", "Product not found.", 404);
     }
 
-    const productRow = prodRes.rows[0];
+    const productRow = prodRes.rows[0] as ProductDetailRow;
 
     // 2) Handle variants if provided
     const variants = Array.isArray(body.variants) ? body.variants : [];
@@ -136,7 +179,7 @@ export async function PUT(
           : null;
       const deleteFlag = variant._delete === true;
 
-      // If _delete and existing ID -> soft delete variant
+      // Soft delete existing variant
       if (variantId && deleteFlag) {
         await client.query(
           `UPDATE product_variants
@@ -147,7 +190,6 @@ export async function PUT(
         continue;
       }
 
-      // Normal create/update flow
       const sizeId =
         variant.size_id !== undefined && variant.size_id !== null
           ? Number(variant.size_id)
@@ -172,7 +214,6 @@ export async function PUT(
           ? Number(variant.initial_quantity)
           : 0;
 
-      // Basic sanity (you already validate on frontend, this is just guardrails)
       if (Number.isNaN(price) || price < 0) {
         throw new Error("Invalid variant price");
       }
@@ -181,7 +222,6 @@ export async function PUT(
       }
 
       if (variantId) {
-        // Update existing variant
         await client.query(
           `UPDATE product_variants SET
              size_id = $3,
@@ -194,7 +234,6 @@ export async function PUT(
           [variantId, productId, sizeId, colorId, sku, price, initialQty],
         );
       } else {
-        // Insert new variant
         await client.query(
           `INSERT INTO product_variants
              (product_id, size_id, color_id, sku, price, initial_quantity)
@@ -206,7 +245,7 @@ export async function PUT(
 
     await client.query("COMMIT");
 
-    // 3) Return updated product WITH fresh variants (same shape as GET)
+    // 3) Return updated product WITH fresh variants
     const finalRes = await db.query(
       `SELECT p.*, (
         SELECT json_agg(row_to_json(pv))
@@ -219,19 +258,27 @@ export async function PUT(
     );
 
     if (!finalRes.rowCount) {
-      // Should not happen after successful update, but handle anyway
-      return NextResponse.json(
-        { error: "Product not found after update" },
-        { status: 404 },
+      return errorResponse(
+        "PRODUCT_NOT_FOUND",
+        "Product not found after update.",
+        404,
       );
     }
 
-    return NextResponse.json(finalRes.rows[0], { status: 200 });
+    const finalRow = finalRes.rows[0] as ProductDetailRow;
+    const resource = toProductResource(finalRow);
+    return NextResponse.json(resource, { status: 200 });
   } catch (err: any) {
     await client.query("ROLLBACK");
-    console.error("PUT /api/products/[id] error:", err);
+    console.error("PUT /api/v1/products/[id] error:", err);
     return NextResponse.json(
-      { error: "Error updating product", details: err?.message ?? String(err) },
+      {
+        error: {
+          code: "PRODUCT_UPDATE_FAILED",
+          message: "Error updating product.",
+          details: err?.message ?? String(err),
+        },
+      },
       { status: 500 },
     );
   } finally {
@@ -249,18 +296,21 @@ export async function DELETE(
   try {
     await requireRoleFromHeader(req.headers.get("authorization"), ["admin"]);
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: e.status || 403 });
+    return errorResponse(
+      "UNAUTHORIZED",
+      e?.message || "Not authorized.",
+      e?.status || 403,
+    );
   }
 
   const { id } = await ctx.params;
   const productId = Number(id);
 
   if (isNaN(productId)) {
-    return NextResponse.json({ error: "Invalid product id" }, { status: 400 });
+    return errorResponse("VALIDATION_ERROR", "Invalid product id.", 400);
   }
 
   try {
-    // Soft delete product
     const res = await db.query(
       `UPDATE products
        SET deleted_at = NOW()
@@ -270,13 +320,13 @@ export async function DELETE(
     );
 
     if (res.rowCount === 0) {
-      return NextResponse.json(
-        { error: "Product not found or already deleted" },
-        { status: 404 },
+      return errorResponse(
+        "PRODUCT_NOT_FOUND",
+        "Product not found or already deleted.",
+        404,
       );
     }
 
-    // Soft delete all its variants
     await db.query(
       `UPDATE product_variants
        SET deleted_at = NOW()
@@ -284,18 +334,29 @@ export async function DELETE(
       [productId],
     );
 
-    return NextResponse.json({ message: "Product deleted" }, { status: 200 });
-  } catch (err: any) {
-    console.error("DELETE /products/:id failed:", err);
     return NextResponse.json(
-      { error: "Internal Server Error" },
-      { status: 500 },
+      {
+        message: "Product deleted.",
+        _links: {
+          self: { href: `/api/v1/products/${productId}` },
+          restore: { href: `/api/v1/products/${productId}`, method: "PATCH" },
+          collection: { href: `/api/v1/products` },
+        },
+      },
+      { status: 200 },
+    );
+  } catch (err: any) {
+    console.error("DELETE /api/v1/products/:id failed:", err);
+    return errorResponse(
+      "PRODUCT_DELETE_FAILED",
+      "Internal server error.",
+      500,
     );
   }
 }
 
 // -----------------------------
-// PATCH Product (optional restore for soft deleted)
+// PATCH Product (restore soft deleted)
 // -----------------------------
 export async function PATCH(
   req: Request,
@@ -304,14 +365,18 @@ export async function PATCH(
   try {
     await requireRoleFromHeader(req.headers.get("authorization"), ["admin"]);
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: e.status || 403 });
+    return errorResponse(
+      "UNAUTHORIZED",
+      e?.message || "Not authorized.",
+      e?.status || 403,
+    );
   }
 
   const { id } = await ctx.params;
   const productId = Number(id);
 
   if (isNaN(productId)) {
-    return NextResponse.json({ error: "Invalid product id" }, { status: 400 });
+    return errorResponse("VALIDATION_ERROR", "Invalid product id.", 400);
   }
 
   try {
@@ -324,21 +389,29 @@ export async function PATCH(
     );
 
     if (!res.rowCount) {
-      return NextResponse.json(
-        { error: "Product not found or not deleted" },
-        { status: 404 },
+      return errorResponse(
+        "PRODUCT_NOT_FOUND",
+        "Product not found or not deleted.",
+        404,
       );
     }
 
+    const row = res.rows[0] as ProductDetailRow;
+    const resource = toProductResource(row);
+
     return NextResponse.json(
-      { message: "Product restored", product: res.rows[0] },
+      {
+        message: "Product restored.",
+        product: resource,
+      },
       { status: 200 },
     );
   } catch (err: any) {
-    console.error("PATCH /products/:id failed:", err);
-    return NextResponse.json(
-      { error: "Internal Server Error" },
-      { status: 500 },
+    console.error("PATCH /api/v1/products/:id failed:", err);
+    return errorResponse(
+      "PRODUCT_RESTORE_FAILED",
+      "Internal server error.",
+      500,
     );
   }
 }

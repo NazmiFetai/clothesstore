@@ -1,8 +1,13 @@
-// ...existing code...
+//src/lib/roles.ts
 import db from "./db";
 import { verifyToken } from "./auth";
 
-export type UserPayload = { id: number; username: string; role_id?: number; role_name?: string };
+export type UserPayload = {
+  id: number;
+  username: string;
+  role_id?: number;
+  role_name?: string;
+};
 
 export function decodeAuthHeader(authHeader?: string): UserPayload | null {
   if (!authHeader) return null;
@@ -14,11 +19,16 @@ export function decodeAuthHeader(authHeader?: string): UserPayload | null {
   }
 }
 
-export async function requireRoleFromHeader(authHeader: string | null, allowedRoles: string[]) {
+export async function requireRoleFromHeader(
+  authHeader: string | null,
+  allowedRoles: string[],
+) {
   const payload = decodeAuthHeader(authHeader ?? undefined);
   if (!payload) throw Object.assign(new Error("Unauthorized"), { status: 401 });
   if (!payload.role_name && payload.role_id) {
-    const r = await db.query("SELECT name FROM roles WHERE id = $1 LIMIT 1", [payload.role_id]);
+    const r = await db.query("SELECT name FROM roles WHERE id = $1 LIMIT 1", [
+      payload.role_id,
+    ]);
     payload.role_name = r.rows[0]?.name;
   }
   if (!payload.role_name || !allowedRoles.includes(payload.role_name)) {

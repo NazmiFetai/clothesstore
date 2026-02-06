@@ -1,18 +1,49 @@
+// app/api/v1/products/[id]/stock/route.ts
 import { NextResponse } from "next/server";
-import db from "../../../../../lib/db";
+import db from "@/lib/db";
 
 export const runtime = "nodejs";
 
+type StockRow = {
+  product_id: number;
+  name: string;
+  initial_quantity: number;
+  sold_quantity: number;
+  current_quantity: number;
+};
+
+function errorResponse(code: string, message: string, status: number) {
+  return NextResponse.json(
+    {
+      error: {
+        code,
+        message,
+      },
+    },
+    { status },
+  );
+}
+
+function toStockResource(row: StockRow) {
+  return {
+    ...row,
+    _links: {
+      self: { href: `/api/v1/products/${row.product_id}/stock` },
+      product: { href: `/api/v1/products/${row.product_id}` },
+      quantity: { href: `/api/v1/products/${row.product_id}/quantity` },
+    },
+  };
+}
+
 export async function GET(
   req: Request,
-  ctx: { params: Promise<{ id: string }> }
+  ctx: { params: Promise<{ id: string }> },
 ) {
-  // Unwrap the Promise to get params
   const { id } = await ctx.params;
   const productId = Number(id);
 
   if (isNaN(productId)) {
-    return NextResponse.json({ error: "Invalid product id" }, { status: 400 });
+    return errorResponse("VALIDATION_ERROR", "Invalid product id.", 400);
   }
 
   try {
@@ -34,15 +65,19 @@ export async function GET(
       WHERE p.id = $1
       GROUP BY p.id, p.name
       `,
-      [productId] // pass the actual number, not NaN
+      [productId],
     );
 
-    if (!res.rowCount)
-      return NextResponse.json({ error: "Product not found" }, { status: 404 });
+    if (!res.rowCount) {
+      return errorResponse("PRODUCT_NOT_FOUND", "Product not found.", 404);
+    }
 
-    return NextResponse.json(res.rows[0], { status: 200 });
+    const row = res.rows[0] as StockRow;
+    const resource = toStockResource(row);
+
+    return NextResponse.json(resource, { status: 200 });
   } catch (err: any) {
-    console.error("GET /products/:id/stock failed:", err);
-    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+    console.error("GET /api/v1/products/:id/stock failed:", err);
+    return errorResponse("PRODUCT_STOCK_FAILED", "Internal server error.", 500);
   }
 }

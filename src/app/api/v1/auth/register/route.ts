@@ -2,7 +2,7 @@
 
 import { NextResponse } from "next/server";
 import bcrypt from "bcrypt";
-import db from "../../../../lib/db";
+import db from "@/lib/db";
 
 export async function POST(req: Request) {
   try {
@@ -12,7 +12,7 @@ export async function POST(req: Request) {
     if ((!name && !username) || !email || !password) {
       return NextResponse.json(
         { error: "name (or username), email and password are required" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -21,7 +21,7 @@ export async function POST(req: Request) {
     // Default role = simple_user (normal customer)
     const roleRes = await db.query(
       "SELECT id FROM roles WHERE name = $1 LIMIT 1",
-      ["simple_user"]
+      ["simple_user"],
     );
     const defaultRoleId = roleRes.rows[0]?.id ?? null;
 
@@ -31,7 +31,7 @@ export async function POST(req: Request) {
       `INSERT INTO users (username, email, password_hash, role_id, created_at)
        VALUES ($1,$2,$3,$4,now())
        RETURNING id, username, email, role_id`,
-      [finalUsername, email, hashed, defaultRoleId]
+      [finalUsername, email, hashed, defaultRoleId],
     );
 
     const user = res.rows[0];
@@ -44,13 +44,13 @@ export async function POST(req: Request) {
         email: user.email,
         role: "simple_user",
       },
-      { status: 201 }
+      { status: 201 },
     );
   } catch (err: any) {
     const msg =
       err?.code === "23505"
         ? "User with this email or username already exists"
-        : err.message ?? "Server error";
+        : (err.message ?? "Server error");
 
     return NextResponse.json({ error: msg }, { status: 400 });
   }

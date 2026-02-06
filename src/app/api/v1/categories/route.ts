@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import db from "../../../lib/db";
-import { requireRoleFromHeader } from "../../../lib/roles";
+import db from "@/lib/db";
+import { requireRoleFromHeader } from "@/lib/roles";
 
 // GET /api/categories
 export async function GET() {
@@ -11,7 +11,10 @@ export async function GET() {
 // POST /api/categories
 export async function POST(req: Request) {
   try {
-    await requireRoleFromHeader(req.headers.get("authorization"), ["admin", "advanced_user"]);
+    await requireRoleFromHeader(req.headers.get("authorization"), [
+      "admin",
+      "advanced_user",
+    ]);
   } catch (e: any) {
     return new NextResponse(e.message, { status: e.status || 403 });
   }
@@ -25,17 +28,23 @@ export async function POST(req: Request) {
        VALUES ($1, $2)
        ON CONFLICT (name) DO NOTHING
        RETURNING *`,
-      [name, description || null]
+      [name, description || null],
     );
 
     if (res.rowCount === 0) {
       // Category already exists
-      return NextResponse.json({ error: `Category "${name}" already exists` }, { status: 400 });
+      return NextResponse.json(
+        { error: `Category "${name}" already exists` },
+        { status: 400 },
+      );
     }
 
     return NextResponse.json(res.rows[0], { status: 201 });
   } catch (err: any) {
     console.error("POST /categories failed:", err);
-    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Internal Server Error" },
+      { status: 500 },
+    );
   }
 }

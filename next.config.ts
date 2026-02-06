@@ -1,7 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  reactStrictMode: false, // <- disable Strict Mode (dev only)
+  /* other config options here */
 };
 
 export default nextConfig;

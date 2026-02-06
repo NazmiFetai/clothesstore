@@ -1,58 +1,70 @@
-// src/app/api/clients/[id]/route.ts
+// src/app/api/v1/clients/[id]/route.ts
 
 import { NextResponse } from "next/server";
-import db from "../../../../lib/db";
-import { requireRoleFromHeader } from "../../../../lib/roles";
+import db from "@/lib/db";
+import { requireRoleFromHeader } from "@/lib/roles";
 
-type Params = {
-  params: { id: string };
+type RouteContext = {
+  params: Promise<{ id: string }>;
 };
 
-// GET /api/clients/:id
-export async function GET(req: Request, { params }: Params) {
+// ------------------------
+// GET /api/v1/clients/:id
+// ------------------------
+export async function GET(req: Request, ctx: RouteContext) {
   try {
     await requireRoleFromHeader(req.headers.get("authorization"), [
       "admin",
       "advanced_user",
     ]);
-    const p = await params;
-    const id = Number(p.id);
-    if (!id || Number.isNaN(id)) {
+
+    const { id } = await ctx.params; // unwrap Promise<{ id: string }>
+    const clientId = Number(id);
+
+    if (!clientId || Number.isNaN(clientId)) {
       return NextResponse.json({ error: "Invalid id" }, { status: 400 });
     }
 
-    const res = await db.query(`SELECT * FROM clients WHERE id = $1`, [id]);
+    const res = await db.query(`SELECT * FROM clients WHERE id = $1`, [
+      clientId,
+    ]);
+
     if (res.rowCount === 0) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
 
     return NextResponse.json(res.rows[0], { status: 200 });
   } catch (err: any) {
-    console.error("GET /api/clients/:id error:", err);
+    console.error("GET /api/v1/clients/:id error:", err);
     return NextResponse.json(
       { error: "Failed to fetch client" },
-      { status: err.status || 500 }
+      { status: err?.status || 500 },
     );
   }
 }
 
-// PUT /api/clients/:id
-export async function PUT(req: Request, { params }: Params) {
-  const client = await db.getClient();
+// ------------------------
+// PUT /api/v1/clients/:id
+// ------------------------
+export async function PUT(req: Request, ctx: RouteContext) {
+  const clientConn = await db.getClient();
+
   try {
     await requireRoleFromHeader(req.headers.get("authorization"), [
       "admin",
       "advanced_user",
     ]);
 
-    const id = Number(params.id);
-    if (!id || Number.isNaN(id)) {
+    const { id } = await ctx.params;
+    const clientId = Number(id);
+
+    if (!clientId || Number.isNaN(clientId)) {
       return NextResponse.json({ error: "Invalid id" }, { status: 400 });
     }
 
     const body = await req.json();
 
-    await client.query("BEGIN");
+    await clientConn.query("BEGIN");
 
     const q = `
       UPDATE clients SET
@@ -70,7 +82,7 @@ export async function PUT(req: Request, { params }: Params) {
     `;
 
     const vals = [
-      id,
+      clientId,
       body.first_name ?? null,
       body.last_name ?? null,
       body.email ?? null,
@@ -81,8 +93,8 @@ export async function PUT(req: Request, { params }: Params) {
       body.country ?? null,
     ];
 
-    const res = await client.query(q, vals);
-    await client.query("COMMIT");
+    const res = await clientConn.query(q, vals);
+    await clientConn.query("COMMIT");
 
     if (res.rowCount === 0) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
@@ -90,44 +102,49 @@ export async function PUT(req: Request, { params }: Params) {
 
     return NextResponse.json(res.rows[0], { status: 200 });
   } catch (err: any) {
-    await client.query("ROLLBACK");
-    console.error("PUT /api/clients/:id error:", err);
+    await clientConn.query("ROLLBACK");
+    console.error("PUT /api/v1/clients/:id error:", err);
     return NextResponse.json(
       {
         error: "Failed to update client",
         details: err?.message ?? String(err),
       },
-      { status: err.status || 500 }
+      { status: err?.status || 500 },
     );
   } finally {
-    client.release();
+    clientConn.release();
   }
 }
 
-// DELETE /api/clients/:id
-export async function DELETE(req: Request, { params }: Params) {
+// ---------------------------
+// DELETE /api/v1/clients/:id
+// ---------------------------
+export async function DELETE(req: Request, ctx: RouteContext) {
   try {
     await requireRoleFromHeader(req.headers.get("authorization"), ["admin"]);
 
-    const id = Number(params.id);
-    if (!id || Number.isNaN(id)) {
+    const { id } = await ctx.params;
+    const clientId = Number(id);
+
+    if (!clientId || Number.isNaN(clientId)) {
       return NextResponse.json({ error: "Invalid id" }, { status: 400 });
     }
 
     const res = await db.query(
       `DELETE FROM clients WHERE id = $1 RETURNING *`,
-      [id]
+      [clientId],
     );
+
     if (res.rowCount === 0) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
 
     return NextResponse.json({ message: "Client deleted" }, { status: 200 });
   } catch (err: any) {
-    console.error("DELETE /api/clients/:id error:", err);
+    console.error("DELETE /api/v1/clients/:id error:", err);
     return NextResponse.json(
       { error: "Failed to delete client" },
-      { status: err.status || 500 }
+      { status: err?.status || 500 },
     );
   }
 }

@@ -1,0 +1,48 @@
+# docker-compose.yml  (simplified, uses LOCAL Postgres)
+
+services:
+  redis:
+    image: redis:7
+    container_name: clothesstore_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+
+  opensearch:
+    image: opensearchproject/opensearch:2.15.0
+    container_name: clothesstore_opensearch
+    restart: unless-stopped
+    environment:
+      discovery.type: single-node
+      DISABLE_SECURITY_PLUGIN: "true"
+      OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    ports:
+      - "9200:9200"
+
+  web:
+    build: .
+    container_name: clothesstore_web
+    restart: unless-stopped
+    depends_on:
+      - redis
+      - opensearch
+    ports:
+      - "3000:3000"
+
+    # load everything from .env first
+    env_file:
+      - .env
+
+    # but override DATABASE_URL inside the container so it talks to YOUR PC's Postgres
+    environment:
+      DATABASE_URL: postgres://postgres:admin@host.docker.internal:5432/estore
+      REDIS_URL: redis://redis:6379
+      OPENSEARCH_URL: http://opensearch:9200
+      NODE_ENV: production

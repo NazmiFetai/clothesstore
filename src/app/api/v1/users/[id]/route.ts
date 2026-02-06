@@ -1,17 +1,14 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcrypt";
-import db from "../../../../lib/db";
-import { requireRoleFromHeader } from "../../../../lib/roles";
+import db from "@/lib/db";
+import { requireRoleFromHeader } from "@/lib/roles";
 
 interface Params {
   id: string;
 }
 
 // -------------------- GET --------------------
-export async function GET(
-  req: Request,
-  context: { params: Promise<Params> }
-) {
+export async function GET(req: Request, context: { params: Promise<Params> }) {
   try {
     await requireRoleFromHeader(req.headers.get("authorization"), ["admin"]);
   } catch (e: any) {
@@ -27,7 +24,7 @@ export async function GET(
     `SELECT id, username, email, role_id, created_at 
      FROM users 
      WHERE id = $1 LIMIT 1`,
-    [numericId]
+    [numericId],
   );
 
   if (!res.rowCount) return new NextResponse("Not found", { status: 404 });
@@ -36,10 +33,7 @@ export async function GET(
 }
 
 // -------------------- PUT --------------------
-export async function PUT(
-  req: Request,
-  context: { params: Promise<Params> }
-) {
+export async function PUT(req: Request, context: { params: Promise<Params> }) {
   try {
     await requireRoleFromHeader(req.headers.get("authorization"), ["admin"]);
   } catch (e: any) {
@@ -74,7 +68,7 @@ export async function PUT(
         body.email || null,
         hashed,
         body.role_id || null,
-      ]
+      ],
     );
 
     if (!res.rowCount) return new NextResponse("Not found", { status: 404 });
@@ -89,7 +83,7 @@ export async function PUT(
 // -------------------- DELETE --------------------
 export async function DELETE(
   req: Request,
-  context: { params: Promise<Params> }
+  context: { params: Promise<Params> },
 ) {
   try {
     await requireRoleFromHeader(req.headers.get("authorization"), ["admin"]);

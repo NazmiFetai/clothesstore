@@ -1,0 +1,11 @@
+node_modules
+npm-debug.log
+.next/cache
+.next/standalone
+.next/trace
+.DS_Store
+.git
+.gitignore
+.env*
+coverage
+dist

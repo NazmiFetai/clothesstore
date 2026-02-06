@@ -1,7 +1,7 @@
 // src/app/api/reports/daily/route.ts
 import { NextResponse } from "next/server";
-import db from "../../../../lib/db";
-import { requireRoleFromHeader } from "../../../../lib/roles";
+import db from "@/lib/db";
+import { requireRoleFromHeader } from "@/lib/roles";
 
 export async function GET(req: Request) {
   try {
@@ -30,7 +30,7 @@ export async function GET(req: Request) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
     return NextResponse.json(
       { error: "Invalid date format. Use YYYY-MM-DD." },
-      { status: 400 }
+      { status: 400 },
     );
   }
 
@@ -46,7 +46,7 @@ export async function GET(req: Request) {
       WHERE o.created_at::date = $1::date
         AND o.status NOT IN ('cancelled', 'returned')
       `,
-      [dateStr]
+      [dateStr],
     );
 
     const summaryRow = summaryRes.rows[0] || {
@@ -72,7 +72,7 @@ export async function GET(req: Request) {
       ORDER BY units DESC
       LIMIT 5
       `,
-      [dateStr]
+      [dateStr],
     );
 
     const topProducts = topRes.rows.map((r) => ({
@@ -93,7 +93,7 @@ export async function GET(req: Request) {
     console.error("GET /api/reports/daily failed:", err);
     return NextResponse.json(
       { error: "Internal Server Error" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

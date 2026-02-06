@@ -1,16 +1,23 @@
 import { NextResponse } from "next/server";
-import db from "../../../../lib/db";
-import { requireRoleFromHeader } from "../../../../lib/roles";
+import db from "@/lib/db";
+import { requireRoleFromHeader } from "@/lib/roles";
 
-export async function PUT(req: Request, context: { params: { id: string } | Promise<{ id: string }> }) {
+export async function PUT(
+  req: Request,
+  context: { params: { id: string } | Promise<{ id: string }> },
+) {
   const { params } = context;
   const resolvedParams = params instanceof Promise ? await params : params;
   const id = Number(resolvedParams.id);
 
-  if (isNaN(id)) return NextResponse.json({ error: "Invalid category ID" }, { status: 400 });
+  if (isNaN(id))
+    return NextResponse.json({ error: "Invalid category ID" }, { status: 400 });
 
   try {
-    await requireRoleFromHeader(req.headers.get("authorization"), ["admin", "advanced_user"]);
+    await requireRoleFromHeader(req.headers.get("authorization"), [
+      "admin",
+      "advanced_user",
+    ]);
   } catch (e: any) {
     return new NextResponse(e.message, { status: e.status || 403 });
   }
@@ -21,19 +28,24 @@ export async function PUT(req: Request, context: { params: { id: string } | Prom
      SET name = COALESCE($2, name), description = COALESCE($3, description) 
      WHERE id = $1 
      RETURNING *`,
-    [id, name, description]
+    [id, name, description],
   );
 
-  if (!res.rowCount) return NextResponse.json({ error: "Category not found" }, { status: 404 });
+  if (!res.rowCount)
+    return NextResponse.json({ error: "Category not found" }, { status: 404 });
   return NextResponse.json(res.rows[0]);
 }
 
-export async function DELETE(req: Request, context: { params: { id: string } | Promise<{ id: string }> }) {
+export async function DELETE(
+  req: Request,
+  context: { params: { id: string } | Promise<{ id: string }> },
+) {
   const { params } = context;
   const resolvedParams = params instanceof Promise ? await params : params;
   const id = Number(resolvedParams.id);
 
-  if (isNaN(id)) return NextResponse.json({ error: "Invalid category ID" }, { status: 400 });
+  if (isNaN(id))
+    return NextResponse.json({ error: "Invalid category ID" }, { status: 400 });
 
   try {
     await requireRoleFromHeader(req.headers.get("authorization"), ["admin"]);
@@ -41,8 +53,12 @@ export async function DELETE(req: Request, context: { params: { id: string } | P
     return new NextResponse(e.message, { status: e.status || 403 });
   }
 
-  const res = await db.query(`DELETE FROM categories WHERE id = $1 RETURNING *`, [id]);
-  if (!res.rowCount) return NextResponse.json({ error: "Category not found" }, { status: 404 });
+  const res = await db.query(
+    `DELETE FROM categories WHERE id = $1 RETURNING *`,
+    [id],
+  );
+  if (!res.rowCount)
+    return NextResponse.json({ error: "Category not found" }, { status: 404 });
 
   return NextResponse.json(res.rows[0]);
 }

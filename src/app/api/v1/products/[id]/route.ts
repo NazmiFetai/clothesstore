@@ -1,9 +1,10 @@
-// app/api/v1/products/[id]/route.ts
+// src/app/api/v1/products/[id]/route.ts
 export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
 import db from "@/lib/db";
 import { requireRoleFromHeader } from "@/lib/roles";
+import { reindexProduct, removeProductFromIndex } from "@/lib/product-index";
 
 type ProductDetailRow = {
   id: number;
@@ -265,6 +266,13 @@ export async function PUT(
       );
     }
 
+    // 👉 reindex in OpenSearch with updated data
+    try {
+      await reindexProduct(productId);
+    } catch (e) {
+      console.error("reindexProduct (PUT /api/v1/products/[id]) failed:", e);
+    }
+
     const finalRow = finalRes.rows[0] as ProductDetailRow;
     const resource = toProductResource(finalRow);
     return NextResponse.json(resource, { status: 200 });
@@ -334,6 +342,16 @@ export async function DELETE(
       [productId],
     );
 
+    // 👉 remove from OpenSearch
+    try {
+      await removeProductFromIndex(productId);
+    } catch (e) {
+      console.error(
+        "removeProductFromIndex (DELETE /api/v1/products/[id]) failed:",
+        e,
+      );
+    }
+
     return NextResponse.json(
       {
         message: "Product deleted.",
@@ -394,6 +412,13 @@ export async function PATCH(
         "Product not found or not deleted.",
         404,
       );
+    }
+
+    // 👉 reindex restored product
+    try {
+      await reindexProduct(productId);
+    } catch (e) {
+      console.error("reindexProduct (PATCH /api/v1/products/[id]) failed:", e);
     }
 
     const row = res.rows[0] as ProductDetailRow;

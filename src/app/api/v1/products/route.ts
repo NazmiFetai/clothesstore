@@ -1,7 +1,9 @@
-// app/api/v1/products/route.ts
+// src/app/api/v1/products/route.ts
 import { NextResponse } from "next/server";
 import db from "@/lib/db";
 import { requireRoleFromHeader } from "@/lib/roles";
+import { getCache, setCache } from "@/lib/redis";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 type ProductRow = {
   id: number;
@@ -36,8 +38,10 @@ function toProductResource(row: ProductRow) {
     ...row,
     _links: {
       self: { href: `/api/v1/products/${row.id}` },
-      variants: { href: `/api/v1/products/${row.id}` }, // variants are included in detail
-      quantity: { href: `/api/v1/products/${row.id}/quantity` }, // for later stock endpoint
+      // variants are included on the detail endpoint
+      variants: { href: `/api/v1/products/${row.id}` },
+      // stock endpoint
+      quantity: { href: `/api/v1/products/${row.id}/quantity` },
     },
   };
 }
@@ -45,6 +49,8 @@ function toProductResource(row: ProductRow) {
 /* -------------------------------------------------------
    GET — Public (no token required)
    Returns: { data: ProductResource[], pagination, _links }
+   + Redis caching
+   + Rate limiting via Redis (checkRateLimit)
 ------------------------------------------------------- */
 export async function GET(req: Request) {
   try {
@@ -52,6 +58,39 @@ export async function GET(req: Request) {
     const limit = Number(url.searchParams.get("limit") || "50");
     const offset = Number(url.searchParams.get("offset") || "0");
 
+    // Identify the client for rate limiting (IP-based)
+    const ip =
+      req.headers.get("x-forwarded-for")?.split(",")[0].trim() ||
+      req.headers.get("x-real-ip") ||
+      "unknown";
+
+    // 120 requests per 60 seconds per IP on product listing
+    const rlKeyBase = `products:list:${ip}`;
+    const rl = await checkRateLimit(rlKeyBase, 120, 60);
+
+    if (!rl.allowed) {
+      const res = NextResponse.json(
+        {
+          error: {
+            code: "RATE_LIMITED",
+            message: `Too many requests. Retry after ${rl.retryAfterSeconds}s.`,
+          },
+        },
+        { status: 429 },
+      );
+      res.headers.set("Retry-After", String(rl.retryAfterSeconds ?? 60));
+      return res;
+    }
+
+    const cacheKey = `products:list:${limit}:${offset}`;
+
+    // 1) Try cache first
+    const cached = await getCache<any>(cacheKey);
+    if (cached) {
+      return NextResponse.json(cached, { status: 200 });
+    }
+
+    // 2) Load from DB
     const q = `
       SELECT
         p.*,
@@ -71,34 +110,36 @@ export async function GET(req: Request) {
 
     const basePath = "/api/v1/products";
 
-    return NextResponse.json(
-      {
-        data: resources,
-        pagination: {
-          limit,
-          offset,
-          count: resources.length,
-        },
-        _links: {
-          self: {
-            href: `${basePath}?limit=${limit}&offset=${offset}`,
-          },
-          next: {
-            href: `${basePath}?limit=${limit}&offset=${offset + limit}`,
-          },
-          prev:
-            offset > 0
-              ? {
-                  href: `${basePath}?limit=${limit}&offset=${Math.max(
-                    0,
-                    offset - limit,
-                  )}`,
-                }
-              : null,
-        },
+    const body = {
+      data: resources,
+      pagination: {
+        limit,
+        offset,
+        count: resources.length,
       },
-      { status: 200 },
-    );
+      _links: {
+        self: {
+          href: `${basePath}?limit=${limit}&offset=${offset}`,
+        },
+        next: {
+          href: `${basePath}?limit=${limit}&offset=${offset + limit}`,
+        },
+        prev:
+          offset > 0
+            ? {
+                href: `${basePath}?limit=${limit}&offset=${Math.max(
+                  0,
+                  offset - limit,
+                )}`,
+              }
+            : null,
+      },
+    };
+
+    // 3) Write to cache (60s TTL)
+    await setCache(cacheKey, body, 60);
+
+    return NextResponse.json(body, { status: 200 });
   } catch (err: any) {
     console.error("GET /api/v1/products error:", err);
     return errorResponse(

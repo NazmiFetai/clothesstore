@@ -115,7 +115,7 @@ export async function PUT(
     return errorResponse("VALIDATION_ERROR", "status is required.", 400);
   }
 
-  // confirm path (stock reservation)
+  // confirm path (simple stock check + reservation)
   if (status === "confirmed") {
     const client = await db.getClient();
     try {
@@ -143,6 +143,8 @@ export async function PUT(
             `Insufficient stock for variant ${it.product_variant_id}`,
           );
         }
+
+        // reserve stock by reducing initial_quantity
         await client.query(
           `UPDATE product_variants
            SET initial_quantity = initial_quantity - $1

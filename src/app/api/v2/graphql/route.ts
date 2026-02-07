@@ -69,17 +69,17 @@ const schema = buildSchema(`
   }
 
   type Query {
-    # simple list (no filters, just pagination)
+    # Simple list (no filters, just pagination)
     products(limit: Int = 20, offset: Int = 0): [Product!]!
 
-    # advanced search, mirrors /api/v1/products/search
+    # Advanced search, mirrors /api/v1/products/search
     searchProducts(
       filter: ProductFilterInput
       limit: Int = 50
       offset: Int = 0
     ): [ProductSearchResult!]!
 
-    # single product by id
+    # Single product by id
     product(id: ID!): Product
   }
 
@@ -258,7 +258,7 @@ type ProductFilter = {
   available?: boolean | null;
 };
 
-async function searchProducts(
+async function searchProductsDb(
   filter: ProductFilter | undefined,
   limit: number,
   offset: number,
@@ -374,7 +374,7 @@ async function createProduct(input: any) {
   return loadProductById(Number(res.rows[0].id));
 }
 
-async function updateProduct(id: number, input: any) {
+async function updateProductDb(id: number, input: any) {
   const res = await db.query(
     `
     UPDATE products SET
@@ -403,7 +403,7 @@ async function updateProduct(id: number, input: any) {
   return loadProductById(id);
 }
 
-async function deleteProduct(id: number) {
+async function deleteProductDb(id: number) {
   const res = await db.query(
     `
     UPDATE products
@@ -445,7 +445,7 @@ const root = {
   }) => {
     const l = typeof limit === "number" ? limit : 50;
     const o = typeof offset === "number" ? offset : 0;
-    return searchProducts(filter, l, o);
+    return searchProductsDb(filter, l, o);
   },
 
   // Mutations
@@ -463,7 +463,7 @@ const root = {
     if (Number.isNaN(numId)) {
       throw new Error("Invalid product id");
     }
-    const updated = await updateProduct(numId, input);
+    const updated = await updateProductDb(numId, input);
     if (!updated) {
       throw new Error("Product not found");
     }
@@ -476,7 +476,7 @@ const root = {
     if (Number.isNaN(numId)) {
       throw new Error("Invalid product id");
     }
-    return deleteProduct(numId);
+    return deleteProductDb(numId);
   },
 };
 

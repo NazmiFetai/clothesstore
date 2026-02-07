@@ -1,7 +1,10 @@
 // src/app/api/v1/orders/route.ts
+export const runtime = "nodejs";
+
 import { NextResponse } from "next/server";
 import db from "@/lib/db";
 import { requireRoleFromHeader } from "@/lib/roles";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 type OrderRow = {
   id: number;
@@ -49,6 +52,7 @@ function toOrderResource(order: any) {
 /* -------------------------------------------------------
    GET — List orders (admin, advanced_user)
    GET /api/v1/orders
+   + Rate limiting via Redis
 ------------------------------------------------------- */
 export async function GET(req: Request) {
   try {
@@ -68,6 +72,29 @@ export async function GET(req: Request) {
     const url = new URL(req.url);
     const limit = Number(url.searchParams.get("limit") || "50");
     const offset = Number(url.searchParams.get("offset") || "0");
+
+    // rate limit per IP + pagination window
+    const ip =
+      req.headers.get("x-forwarded-for")?.split(",")[0].trim() ||
+      req.headers.get("x-real-ip") ||
+      "unknown";
+
+    const rlKeyBase = `orders:list:${ip}:${limit}:${offset}`;
+    const rl = await checkRateLimit(rlKeyBase, 100, 60); // 100 req / 60s
+
+    if (!rl.allowed) {
+      const res = NextResponse.json(
+        {
+          error: {
+            code: "RATE_LIMITED",
+            message: `Too many requests. Retry after ${rl.retryAfterSeconds}s.`,
+          },
+        },
+        { status: 429 },
+      );
+      res.headers.set("Retry-After", String(rl.retryAfterSeconds ?? 60));
+      return res;
+    }
 
     const res = await db.query(
       `
@@ -90,7 +117,6 @@ export async function GET(req: Request) {
     );
 
     const resources = res.rows.map(toOrderResource);
-
     const basePath = "/api/v1/orders";
 
     return NextResponse.json(
@@ -128,7 +154,7 @@ export async function GET(req: Request) {
 }
 
 /* -------------------------------------------------------
-   POST — Create order (public / customer checkout)
+   POST — Create order (public / checkout)
    POST /api/v1/orders
 ------------------------------------------------------- */
 export async function POST(req: Request) {
@@ -152,7 +178,7 @@ export async function POST(req: Request) {
     const clientData = body.client ?? null;
     let clientId = body.client_id ?? null;
 
-    // create/reuse client if email is provided
+    // 1) Client handling: create/reuse based on email
     if (!clientId && clientData && clientData.email) {
       const existing = await db.query(
         "SELECT id FROM clients WHERE email = $1 LIMIT 1",
@@ -160,6 +186,7 @@ export async function POST(req: Request) {
       );
 
       if ((existing.rowCount ?? 0) > 0) {
+        // reuse existing + update info
         clientId = existing.rows[0].id;
 
         await db.query(
@@ -186,6 +213,7 @@ export async function POST(req: Request) {
           ],
         );
       } else {
+        // insert new client
         const inserted = await db.query(
           `
           INSERT INTO clients
@@ -208,7 +236,7 @@ export async function POST(req: Request) {
       }
     }
 
-    // validate client_id if given directly
+    // 2) Validate client_id if provided directly
     if (clientId != null && !clientData) {
       const c = await db.query("SELECT id FROM clients WHERE id = $1", [
         clientId,
@@ -218,7 +246,7 @@ export async function POST(req: Request) {
       }
     }
 
-    // validate created_by if provided
+    // 3) Validate created_by if provided
     if (body.created_by != null) {
       const u = await db.query("SELECT id FROM users WHERE id = $1", [
         body.created_by,
@@ -228,6 +256,7 @@ export async function POST(req: Request) {
       }
     }
 
+    // 4) Create order + items in a transaction
     await clientConn.query("BEGIN");
 
     const orderRes = await clientConn.query(

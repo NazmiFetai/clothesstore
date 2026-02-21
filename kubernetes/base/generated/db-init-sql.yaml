@@ -1,0 +1,656 @@
+﻿apiVersion: v1
+data:
+  01-schema.sql: "--\r\n-- PostgreSQL database dump\r\n--\r\n\r\n-- Dumped from database
+    version 17.4\r\n-- Dumped by pg_dump version 17.4\r\n\r\n-- Started on 2026-02-21
+    02:43:26\r\n\r\nSET statement_timeout = 0;\r\nSET lock_timeout = 0;\r\nSET idle_in_transaction_session_timeout
+    = 0;\r\nSET client_encoding = 'UTF8';\r\nSET standard_conforming_strings = on;\r\nSELECT
+    pg_catalog.set_config('search_path', '', false);\r\nSET check_function_bodies
+    = false;\r\nSET xmloption = content;\r\nSET client_min_messages = warning;\r\nSET
+    row_security = off;\r\n\r\n--\r\n-- TOC entry 900 (class 1247 OID 25686)\r\n--
+    Name: discount_type; Type: TYPE; Schema: public; Owner: postgres\r\n--\r\n\r\nCREATE
+    TYPE public.discount_type AS ENUM (\r\n    'percent',\r\n    'fixed'\r\n);\r\n\r\n\r\nALTER
+    TYPE public.discount_type OWNER TO postgres;\r\n\r\n--\r\n-- TOC entry 918 (class
+    1247 OID 25763)\r\n-- Name: order_status; Type: TYPE; Schema: public; Owner: postgres\r\n--\r\n\r\nCREATE
+    TYPE public.order_status AS ENUM (\r\n    'pending',\r\n    'confirmed',\r\n    'processing',\r\n
+    \   'shipped',\r\n    'delivered',\r\n    'cancelled',\r\n    'returned'\r\n);\r\n\r\n\r\nALTER
+    TYPE public.order_status OWNER TO postgres;\r\n\r\n--\r\n-- TOC entry 250 (class
+    1255 OID 25847)\r\n-- Name: fn_calc_order_total(); Type: FUNCTION; Schema: public;
+    Owner: postgres\r\n--\r\n\r\nCREATE FUNCTION public.fn_calc_order_total() RETURNS
+    trigger\r\n    LANGUAGE plpgsql\r\n    AS $$\r\nDECLARE\r\n    v_total NUMERIC(12,2);\r\nBEGIN\r\n
+    \   SELECT COALESCE(SUM(subtotal),0) INTO v_total FROM order_items WHERE order_id
+    = NEW.id;\r\n    NEW.total_amount := v_total;\r\n    RETURN NEW;\r\nEND;\r\n$$;\r\n\r\n\r\nALTER
+    FUNCTION public.fn_calc_order_total() OWNER TO postgres;\r\n\r\n--\r\n-- TOC entry
+    249 (class 1255 OID 25828)\r\n-- Name: fn_get_variant_quantity(bigint); Type:
+    FUNCTION; Schema: public; Owner: postgres\r\n--\r\n\r\nCREATE FUNCTION public.fn_get_variant_quantity(p_variant_id
+    bigint) RETURNS TABLE(product_id bigint, variant_id bigint, initial_quantity integer,
+    sold_quantity bigint, current_quantity bigint)\r\n    LANGUAGE plpgsql STABLE\r\n
+    \   AS $$\r\nBEGIN\r\n    RETURN QUERY\r\n    SELECT\r\n        pv.product_id,\r\n
+    \       pv.id,\r\n        pv.initial_quantity,\r\n        COALESCE(SUM(oi.quantity),
+    0) AS sold_quantity,\r\n        (pv.initial_quantity - COALESCE(SUM(oi.quantity),
+    0))::BIGINT AS current_quantity\r\n    FROM product_variants pv\r\n    LEFT JOIN
+    order_items oi\r\n        ON oi.product_variant_id = pv.id\r\n    LEFT JOIN orders
+    o\r\n        ON o.id = oi.order_id\r\n    WHERE pv.id = p_variant_id\r\n      AND
+    (o.status IS NULL OR o.status NOT IN ('cancelled')) -- only count non-cancelled
+    items\r\n    GROUP BY pv.product_id, pv.id, pv.initial_quantity;\r\nEND;\r\n$$;\r\n\r\n\r\nALTER
+    FUNCTION public.fn_get_variant_quantity(p_variant_id bigint) OWNER TO postgres;\r\n\r\n--\r\n--
+    TOC entry 248 (class 1255 OID 25824)\r\n-- Name: trg_set_updated_at(); Type: FUNCTION;
+    Schema: public; Owner: postgres\r\n--\r\n\r\nCREATE FUNCTION public.trg_set_updated_at()
+    RETURNS trigger\r\n    LANGUAGE plpgsql\r\n    AS $$\r\nBEGIN\r\n    NEW.updated_at
+    = now();\r\n    RETURN NEW;\r\nEND;\r\n$$;\r\n\r\n\r\nALTER FUNCTION public.trg_set_updated_at()
+    OWNER TO postgres;\r\n\r\nSET default_tablespace = '';\r\n\r\nSET default_table_access_method
+    = heap;\r\n\r\n--\r\n-- TOC entry 220 (class 1259 OID 25578)\r\n-- Name: brands;
+    Type: TABLE; Schema: public; Owner: postgres\r\n--\r\n\r\nCREATE TABLE public.brands
+    (\r\n    id bigint NOT NULL,\r\n    name text NOT NULL,\r\n    description text\r\n);\r\n\r\n\r\nALTER
+    TABLE public.brands OWNER TO postgres;\r\n\r\n--\r\n-- TOC entry 219 (class 1259
+    OID 25577)\r\n-- Name: brands_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres\r\n--\r\n\r\nCREATE
+    SEQUENCE public.brands_id_seq\r\n    START WITH 1\r\n    INCREMENT BY 1\r\n    NO
+    MINVALUE\r\n    NO MAXVALUE\r\n    CACHE 1;\r\n\r\n\r\nALTER SEQUENCE public.brands_id_seq
+    OWNER TO postgres;\r\n\r\n--\r\n-- TOC entry 5095 (class 0 OID 0)\r\n-- Dependencies:
+    219\r\n-- Name: brands_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner:
+    postgres\r\n--\r\n\r\nALTER SEQUENCE public.brands_id_seq OWNED BY public.brands.id;\r\n\r\n\r\n--\r\n--
+    TOC entry 218 (class 1259 OID 25567)\r\n-- Name: categories; Type: TABLE; Schema:
+    public; Owner: postgres\r\n--\r\n\r\nCREATE TABLE public.categories (\r\n    id
+    bigint NOT NULL,\r\n    name text NOT NULL,\r\n    description text\r\n);\r\n\r\n\r\nALTER
+    TABLE public.categories OWNER TO postgres;\r\n\r\n--\r\n-- TOC entry 217 (class
+    1259 OID 25566)\r\n-- Name: categories_id_seq; Type: SEQUENCE; Schema: public;
+    Owner: postgres\r\n--\r\n\r\nCREATE SEQUENCE public.categories_id_seq\r\n    START
+    WITH 1\r\n    INCREMENT BY 1\r\n    NO MINVALUE\r\n    NO MAXVALUE\r\n    CACHE
+    1;\r\n\r\n\r\nALTER SEQUENCE public.categories_id_seq OWNER TO postgres;\r\n\r\n--\r\n--
+    TOC entry 5096 (class 0 OID 0)\r\n-- Dependencies: 217\r\n-- Name: categories_id_seq;
+    Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres\r\n--\r\n\r\nALTER SEQUENCE
+    public.categories_id_seq OWNED BY public.categories.id;\r\n\r\n\r\n--\r\n-- TOC
+    entry 239 (class 1259 OID 25751)\r\n-- Name: clients; Type: TABLE; Schema: public;
+    Owner: postgres\r\n--\r\n\r\nCREATE TABLE public.clients (\r\n    id bigint NOT
+    NULL,\r\n    first_name text,\r\n    last_name text,\r\n    email text,\r\n    phone
+    text,\r\n    address text,\r\n    city text,\r\n    postal_code text,\r\n    country
+    text,\r\n    created_at timestamp with time zone DEFAULT now() NOT NULL\r\n);\r\n\r\n\r\nALTER
+    TABLE public.clients OWNER TO postgres;\r\n\r\n--\r\n-- TOC entry 238 (class 1259
+    OID 25750)\r\n-- Name: clients_id_seq; Type: SEQUENCE; Schema: public; Owner:
+    postgres\r\n--\r\n\r\nCREATE SEQUENCE public.clients_id_seq\r\n    START WITH
+    1\r\n    INCREMENT BY 1\r\n    NO MINVALUE\r\n    NO MAXVALUE\r\n    CACHE 1;\r\n\r\n\r\nALTER
+    SEQUENCE public.clients_id_seq OWNER TO postgres;\r\n\r\n--\r\n-- TOC entry 5097
+    (class 0 OID 0)\r\n-- Dependencies: 238\r\n-- Name: clients_id_seq; Type: SEQUENCE
+    OWNED BY; Schema: public; Owner: postgres\r\n--\r\n\r\nALTER SEQUENCE public.clients_id_seq
+    OWNED BY public.clients.id;\r\n\r\n\r\n--\r\n-- TOC entry 226 (class 1259 OID
+    25611)\r\n-- Name: colors; Type: TABLE; Schema: public; Owner: postgres\r\n--\r\n\r\nCREATE
+    TABLE public.colors (\r\n    id bigint NOT NULL,\r\n    name text NOT NULL\r\n);\r\n\r\n\r\nALTER
+    TABLE public.colors OWNER TO postgres;\r\n\r\n--\r\n-- TOC entry 225 (class 1259
+    OID 25610)\r\n-- Name: colors_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres\r\n--\r\n\r\nCREATE
+    SEQUENCE public.colors_id_seq\r\n    START WITH 1\r\n    INCREMENT BY 1\r\n    NO
+    MINVALUE\r\n    NO MAXVALUE\r\n    CACHE 1;\r\n\r\n\r\nALTER SEQUENCE public.colors_id_seq
+    OWNER TO postgres;\r\n\r\n--\r\n-- TOC entry 5098 (class 0 OID 0)\r\n-- Dependencies:
+    225\r\n-- Name: colors_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner:
+    postgres\r\n--\r\n\r\nALTER SEQUENCE public.colors_id_seq OWNED BY public.colors.id;\r\n\r\n\r\n--\r\n--
+    TOC entry 233 (class 1259 OID 25704)\r\n-- Name: discount_products; Type: TABLE;
+    Schema: public; Owner: postgres\r\n--\r\n\r\nCREATE TABLE public.discount_products
+    (\r\n    discount_id bigint NOT NULL,\r\n    product_id bigint NOT NULL\r\n);\r\n\r\n\r\nALTER
+    TABLE public.discount_products OWNER TO postgres;\r\n\r\n--\r\n-- TOC entry 232
+    (class 1259 OID 25692)\r\n-- Name: discounts; Type: TABLE; Schema: public; Owner:
+    postgres\r\n--\r\n\r\nCREATE TABLE public.discounts (\r\n    id bigint NOT NULL,\r\n
+    \   name text NOT NULL,\r\n    type public.discount_type NOT NULL,\r\n    value
+    numeric(10,2) NOT NULL,\r\n    start_date date DEFAULT CURRENT_DATE NOT NULL,\r\n
+    \   end_date date,\r\n    active boolean DEFAULT true NOT NULL,\r\n    created_at
+    timestamp with time zone DEFAULT now() NOT NULL,\r\n    CONSTRAINT discounts_value_check
+    CHECK ((value >= (0)::numeric))\r\n);\r\n\r\n\r\nALTER TABLE public.discounts
+    OWNER TO postgres;\r\n\r\n--\r\n-- TOC entry 5099 (class 0 OID 0)\r\n-- Dependencies:
+    232\r\n-- Name: TABLE discounts; Type: COMMENT; Schema: public; Owner: postgres\r\n--\r\n\r\nCOMMENT
+    ON TABLE public.discounts IS 'Discounts may be linked to products via discount_products';\r\n\r\n\r\n--\r\n--
+    TOC entry 231 (class 1259 OID 25691)\r\n-- Name: discounts_id_seq; Type: SEQUENCE;
+    Schema: public; Owner: postgres\r\n--\r\n\r\nCREATE SEQUENCE public.discounts_id_seq\r\n
+    \   START WITH 1\r\n    INCREMENT BY 1\r\n    NO MINVALUE\r\n    NO MAXVALUE\r\n
+    \   CACHE 1;\r\n\r\n\r\nALTER SEQUENCE public.discounts_id_seq OWNER TO postgres;\r\n\r\n--\r\n--
+    TOC entry 5100 (class 0 OID 0)\r\n-- Dependencies: 231\r\n-- Name: discounts_id_seq;
+    Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres\r\n--\r\n\r\nALTER SEQUENCE
+    public.discounts_id_seq OWNED BY public.discounts.id;\r\n\r\n\r\n--\r\n-- TOC
+    entry 222 (class 1259 OID 25589)\r\n-- Name: genders; Type: TABLE; Schema: public;
+    Owner: postgres\r\n--\r\n\r\nCREATE TABLE public.genders (\r\n    id bigint NOT
+    NULL,\r\n    name text NOT NULL\r\n);\r\n\r\n\r\nALTER TABLE public.genders OWNER
+    TO postgres;\r\n\r\n--\r\n-- TOC entry 221 (class 1259 OID 25588)\r\n-- Name:
+    genders_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres\r\n--\r\n\r\nCREATE
+    SEQUENCE public.genders_id_seq\r\n    START WITH 1\r\n    INCREMENT BY 1\r\n    NO
+    MINVALUE\r\n    NO MAXVALUE\r\n    CACHE 1;\r\n\r\n\r\nALTER SEQUENCE public.genders_id_seq
+    OWNER TO postgres;\r\n\r\n--\r\n-- TOC entry 5101 (class 0 OID 0)\r\n-- Dependencies:
+    221\r\n-- Name: genders_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner:
+    postgres\r\n--\r\n\r\nALTER SEQUENCE public.genders_id_seq OWNED BY public.genders.id;\r\n\r\n\r\n--\r\n--
+    TOC entry 243 (class 1259 OID 25802)\r\n-- Name: order_items; Type: TABLE; Schema:
+    public; Owner: postgres\r\n--\r\n\r\nCREATE TABLE public.order_items (\r\n    id
+    bigint NOT NULL,\r\n    order_id bigint NOT NULL,\r\n    product_variant_id bigint
+    NOT NULL,\r\n    unit_price numeric(10,2) NOT NULL,\r\n    quantity integer NOT
+    NULL,\r\n    subtotal numeric(12,2) NOT NULL,\r\n    created_at timestamp with
+    time zone DEFAULT now() NOT NULL,\r\n    CONSTRAINT order_items_quantity_check
+    CHECK ((quantity > 0)),\r\n    CONSTRAINT order_items_subtotal_check CHECK ((subtotal
+    >= (0)::numeric)),\r\n    CONSTRAINT order_items_unit_price_check CHECK ((unit_price
+    >= (0)::numeric))\r\n);\r\n\r\n\r\nALTER TABLE public.order_items OWNER TO postgres;\r\n\r\n--\r\n--
+    TOC entry 242 (class 1259 OID 25801)\r\n-- Name: order_items_id_seq; Type: SEQUENCE;
+    Schema: public; Owner: postgres\r\n--\r\n\r\nCREATE SEQUENCE public.order_items_id_seq\r\n
+    \   START WITH 1\r\n    INCREMENT BY 1\r\n    NO MINVALUE\r\n    NO MAXVALUE\r\n
+    \   CACHE 1;\r\n\r\n\r\nALTER SEQUENCE public.order_items_id_seq OWNER TO postgres;\r\n\r\n--\r\n--
+    TOC entry 5102 (class 0 OID 0)\r\n-- Dependencies: 242\r\n-- Name: order_items_id_seq;
+    Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres\r\n--\r\n\r\nALTER SEQUENCE
+    public.order_items_id_seq OWNED BY public.order_items.id;\r\n\r\n\r\n--\r\n--
+    TOC entry 241 (class 1259 OID 25778)\r\n-- Name: orders; Type: TABLE; Schema:
+    public; Owner: postgres\r\n--\r\n\r\nCREATE TABLE public.orders (\r\n    id bigint
+    NOT NULL,\r\n    client_id bigint,\r\n    created_by bigint,\r\n    status public.order_status
+    DEFAULT 'pending'::public.order_status NOT NULL,\r\n    payment_method text,\r\n
+    \   total_amount numeric(12,2) DEFAULT 0 NOT NULL,\r\n    created_at timestamp
+    with time zone DEFAULT now() NOT NULL,\r\n    updated_at timestamp with time zone
+    DEFAULT now() NOT NULL,\r\n    CONSTRAINT orders_total_amount_check CHECK ((total_amount
+    >= (0)::numeric))\r\n);\r\n\r\n\r\nALTER TABLE public.orders OWNER TO postgres;\r\n\r\n--\r\n--
+    TOC entry 240 (class 1259 OID 25777)\r\n-- Name: orders_id_seq; Type: SEQUENCE;
+    Schema: public; Owner: postgres\r\n--\r\n\r\nCREATE SEQUENCE public.orders_id_seq\r\n
+    \   START WITH 1\r\n    INCREMENT BY 1\r\n    NO MINVALUE\r\n    NO MAXVALUE\r\n
+    \   CACHE 1;\r\n\r\n\r\nALTER SEQUENCE public.orders_id_seq OWNER TO postgres;\r\n\r\n--\r\n--
+    TOC entry 5103 (class 0 OID 0)\r\n-- Dependencies: 240\r\n-- Name: orders_id_seq;
+    Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres\r\n--\r\n\r\nALTER SEQUENCE
+    public.orders_id_seq OWNED BY public.orders.id;\r\n\r\n\r\n--\r\n-- TOC entry
+    230 (class 1259 OID 25650)\r\n-- Name: product_variants; Type: TABLE; Schema:
+    public; Owner: postgres\r\n--\r\n\r\nCREATE TABLE public.product_variants (\r\n
+    \   id bigint NOT NULL,\r\n    product_id bigint NOT NULL,\r\n    size_id bigint,\r\n
+    \   color_id bigint,\r\n    sku text,\r\n    price numeric(10,2) NOT NULL,\r\n
+    \   initial_quantity integer DEFAULT 0 NOT NULL,\r\n    created_at timestamp with
+    time zone DEFAULT now() NOT NULL,\r\n    updated_at timestamp with time zone DEFAULT
+    now() NOT NULL,\r\n    deleted_at timestamp without time zone,\r\n    CONSTRAINT
+    product_variants_initial_quantity_check CHECK ((initial_quantity >= 0)),\r\n    CONSTRAINT
+    product_variants_price_check CHECK ((price >= (0)::numeric))\r\n);\r\n\r\n\r\nALTER
+    TABLE public.product_variants OWNER TO postgres;\r\n\r\n--\r\n-- TOC entry 5104
+    (class 0 OID 0)\r\n-- Dependencies: 230\r\n-- Name: TABLE product_variants; Type:
+    COMMENT; Schema: public; Owner: postgres\r\n--\r\n\r\nCOMMENT ON TABLE public.product_variants
+    IS 'Each variant indicates size+color SKU, price and initial stock';\r\n\r\n\r\n--\r\n--
+    TOC entry 229 (class 1259 OID 25649)\r\n-- Name: product_variants_id_seq; Type:
+    SEQUENCE; Schema: public; Owner: postgres\r\n--\r\n\r\nCREATE SEQUENCE public.product_variants_id_seq\r\n
+    \   START WITH 1\r\n    INCREMENT BY 1\r\n    NO MINVALUE\r\n    NO MAXVALUE\r\n
+    \   CACHE 1;\r\n\r\n\r\nALTER SEQUENCE public.product_variants_id_seq OWNER TO
+    postgres;\r\n\r\n--\r\n-- TOC entry 5105 (class 0 OID 0)\r\n-- Dependencies: 229\r\n--
+    Name: product_variants_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner:
+    postgres\r\n--\r\n\r\nALTER SEQUENCE public.product_variants_id_seq OWNED BY public.product_variants.id;\r\n\r\n\r\n--\r\n--
+    TOC entry 228 (class 1259 OID 25622)\r\n-- Name: products; Type: TABLE; Schema:
+    public; Owner: postgres\r\n--\r\n\r\nCREATE TABLE public.products (\r\n    id
+    bigint NOT NULL,\r\n    name text NOT NULL,\r\n    description text,\r\n    category_id
+    bigint,\r\n    brand_id bigint,\r\n    gender_id bigint,\r\n    default_price
+    numeric(10,2) NOT NULL,\r\n    active boolean DEFAULT true NOT NULL,\r\n    created_at
+    timestamp with time zone DEFAULT now() NOT NULL,\r\n    updated_at timestamp with
+    time zone DEFAULT now() NOT NULL,\r\n    deleted_at timestamp without time zone,\r\n
+    \   CONSTRAINT products_default_price_check CHECK ((default_price >= (0)::numeric))\r\n);\r\n\r\n\r\nALTER
+    TABLE public.products OWNER TO postgres;\r\n\r\n--\r\n-- TOC entry 5106 (class
+    0 OID 0)\r\n-- Dependencies: 228\r\n-- Name: TABLE products; Type: COMMENT; Schema:
+    public; Owner: postgres\r\n--\r\n\r\nCOMMENT ON TABLE public.products IS 'General
+    product info. Price per variant is in product_variants.price';\r\n\r\n\r\n--\r\n--
+    TOC entry 227 (class 1259 OID 25621)\r\n-- Name: products_id_seq; Type: SEQUENCE;
+    Schema: public; Owner: postgres\r\n--\r\n\r\nCREATE SEQUENCE public.products_id_seq\r\n
+    \   START WITH 1\r\n    INCREMENT BY 1\r\n    NO MINVALUE\r\n    NO MAXVALUE\r\n
+    \   CACHE 1;\r\n\r\n\r\nALTER SEQUENCE public.products_id_seq OWNER TO postgres;\r\n\r\n--\r\n--
+    TOC entry 5107 (class 0 OID 0)\r\n-- Dependencies: 227\r\n-- Name: products_id_seq;
+    Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres\r\n--\r\n\r\nALTER SEQUENCE
+    public.products_id_seq OWNED BY public.products.id;\r\n\r\n\r\n--\r\n-- TOC entry
+    235 (class 1259 OID 25720)\r\n-- Name: roles; Type: TABLE; Schema: public; Owner:
+    postgres\r\n--\r\n\r\nCREATE TABLE public.roles (\r\n    id bigint NOT NULL,\r\n
+    \   name text NOT NULL\r\n);\r\n\r\n\r\nALTER TABLE public.roles OWNER TO postgres;\r\n\r\n--\r\n--
+    TOC entry 234 (class 1259 OID 25719)\r\n-- Name: roles_id_seq; Type: SEQUENCE;
+    Schema: public; Owner: postgres\r\n--\r\n\r\nCREATE SEQUENCE public.roles_id_seq\r\n
+    \   START WITH 1\r\n    INCREMENT BY 1\r\n    NO MINVALUE\r\n    NO MAXVALUE\r\n
+    \   CACHE 1;\r\n\r\n\r\nALTER SEQUENCE public.roles_id_seq OWNER TO postgres;\r\n\r\n--\r\n--
+    TOC entry 5108 (class 0 OID 0)\r\n-- Dependencies: 234\r\n-- Name: roles_id_seq;
+    Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres\r\n--\r\n\r\nALTER SEQUENCE
+    public.roles_id_seq OWNED BY public.roles.id;\r\n\r\n\r\n--\r\n-- TOC entry 224
+    (class 1259 OID 25600)\r\n-- Name: sizes; Type: TABLE; Schema: public; Owner:
+    postgres\r\n--\r\n\r\nCREATE TABLE public.sizes (\r\n    id bigint NOT NULL,\r\n
+    \   name text NOT NULL\r\n);\r\n\r\n\r\nALTER TABLE public.sizes OWNER TO postgres;\r\n\r\n--\r\n--
+    TOC entry 223 (class 1259 OID 25599)\r\n-- Name: sizes_id_seq; Type: SEQUENCE;
+    Schema: public; Owner: postgres\r\n--\r\n\r\nCREATE SEQUENCE public.sizes_id_seq\r\n
+    \   START WITH 1\r\n    INCREMENT BY 1\r\n    NO MINVALUE\r\n    NO MAXVALUE\r\n
+    \   CACHE 1;\r\n\r\n\r\nALTER SEQUENCE public.sizes_id_seq OWNER TO postgres;\r\n\r\n--\r\n--
+    TOC entry 5109 (class 0 OID 0)\r\n-- Dependencies: 223\r\n-- Name: sizes_id_seq;
+    Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres\r\n--\r\n\r\nALTER SEQUENCE
+    public.sizes_id_seq OWNED BY public.sizes.id;\r\n\r\n\r\n--\r\n-- TOC entry 237
+    (class 1259 OID 25731)\r\n-- Name: users; Type: TABLE; Schema: public; Owner:
+    postgres\r\n--\r\n\r\nCREATE TABLE public.users (\r\n    id bigint NOT NULL,\r\n
+    \   username text NOT NULL,\r\n    email text,\r\n    password_hash text NOT NULL,\r\n
+    \   role_id bigint,\r\n    is_active boolean DEFAULT true NOT NULL,\r\n    created_at
+    timestamp with time zone DEFAULT now() NOT NULL,\r\n    last_login timestamp with
+    time zone\r\n);\r\n\r\n\r\nALTER TABLE public.users OWNER TO postgres;\r\n\r\n--\r\n--
+    TOC entry 236 (class 1259 OID 25730)\r\n-- Name: users_id_seq; Type: SEQUENCE;
+    Schema: public; Owner: postgres\r\n--\r\n\r\nCREATE SEQUENCE public.users_id_seq\r\n
+    \   START WITH 1\r\n    INCREMENT BY 1\r\n    NO MINVALUE\r\n    NO MAXVALUE\r\n
+    \   CACHE 1;\r\n\r\n\r\nALTER SEQUENCE public.users_id_seq OWNER TO postgres;\r\n\r\n--\r\n--
+    TOC entry 5110 (class 0 OID 0)\r\n-- Dependencies: 236\r\n-- Name: users_id_seq;
+    Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres\r\n--\r\n\r\nALTER SEQUENCE
+    public.users_id_seq OWNED BY public.users.id;\r\n\r\n\r\n--\r\n-- TOC entry 245
+    (class 1259 OID 25834)\r\n-- Name: vw_daily_earnings; Type: VIEW; Schema: public;
+    Owner: postgres\r\n--\r\n\r\nCREATE VIEW public.vw_daily_earnings AS\r\n SELECT
+    date_trunc('day'::text, created_at) AS day,\r\n    count(id) AS orders_count,\r\n
+    \   sum(total_amount) AS earnings\r\n   FROM public.orders o\r\n  WHERE (status
+    <> 'cancelled'::public.order_status)\r\n  GROUP BY (date_trunc('day'::text, created_at))\r\n
+    \ ORDER BY (date_trunc('day'::text, created_at)) DESC;\r\n\r\n\r\nALTER VIEW public.vw_daily_earnings
+    OWNER TO postgres;\r\n\r\n--\r\n-- TOC entry 246 (class 1259 OID 25838)\r\n--
+    Name: vw_monthly_earnings; Type: VIEW; Schema: public; Owner: postgres\r\n--\r\n\r\nCREATE
+    VIEW public.vw_monthly_earnings AS\r\n SELECT date_trunc('month'::text, created_at)
+    AS month,\r\n    count(id) AS orders_count,\r\n    sum(total_amount) AS earnings\r\n
+    \  FROM public.orders o\r\n  WHERE (status <> 'cancelled'::public.order_status)\r\n
+    \ GROUP BY (date_trunc('month'::text, created_at))\r\n  ORDER BY (date_trunc('month'::text,
+    created_at)) DESC;\r\n\r\n\r\nALTER VIEW public.vw_monthly_earnings OWNER TO postgres;\r\n\r\n--\r\n--
+    TOC entry 244 (class 1259 OID 25829)\r\n-- Name: vw_product_stock; Type: VIEW;
+    Schema: public; Owner: postgres\r\n--\r\n\r\nCREATE VIEW public.vw_product_stock
+    AS\r\n SELECT pv.id AS variant_id,\r\n    p.id AS product_id,\r\n    p.name AS
+    product_name,\r\n    c.name AS category,\r\n    b.name AS brand,\r\n    g.name
+    AS gender,\r\n    s.name AS size,\r\n    col.name AS color,\r\n    pv.sku,\r\n
+    \   pv.price,\r\n    pv.initial_quantity,\r\n    COALESCE(sold.sold_quantity,
+    (0)::bigint) AS sold_quantity,\r\n    (pv.initial_quantity - COALESCE(sold.sold_quantity,
+    (0)::bigint)) AS current_quantity\r\n   FROM (((((((public.product_variants pv\r\n
+    \    JOIN public.products p ON ((p.id = pv.product_id)))\r\n     LEFT JOIN public.categories
+    c ON ((c.id = p.category_id)))\r\n     LEFT JOIN public.brands b ON ((b.id = p.brand_id)))\r\n
+    \    LEFT JOIN public.genders g ON ((g.id = p.gender_id)))\r\n     LEFT JOIN public.sizes
+    s ON ((s.id = pv.size_id)))\r\n     LEFT JOIN public.colors col ON ((col.id =
+    pv.color_id)))\r\n     LEFT JOIN LATERAL ( SELECT COALESCE(sum(oi.quantity), (0)::bigint)
+    AS sold_quantity\r\n           FROM (public.order_items oi\r\n             JOIN
+    public.orders o ON ((o.id = oi.order_id)))\r\n          WHERE ((oi.product_variant_id
+    = pv.id) AND (o.status <> 'cancelled'::public.order_status))) sold ON (true));\r\n\r\n\r\nALTER
+    VIEW public.vw_product_stock OWNER TO postgres;\r\n\r\n--\r\n-- TOC entry 247
+    (class 1259 OID 25842)\r\n-- Name: vw_top_selling_products; Type: VIEW; Schema:
+    public; Owner: postgres\r\n--\r\n\r\nCREATE VIEW public.vw_top_selling_products
+    AS\r\n SELECT pv.product_id,\r\n    p.name AS product_name,\r\n    pv.id AS variant_id,\r\n
+    \   pv.sku,\r\n    sum(oi.quantity) AS total_sold,\r\n    sum(oi.subtotal) AS
+    revenue\r\n   FROM (((public.order_items oi\r\n     JOIN public.product_variants
+    pv ON ((pv.id = oi.product_variant_id)))\r\n     JOIN public.orders o ON ((o.id
+    = oi.order_id)))\r\n     JOIN public.products p ON ((p.id = pv.product_id)))\r\n
+    \ WHERE (o.status <> 'cancelled'::public.order_status)\r\n  GROUP BY pv.product_id,
+    p.name, pv.id, pv.sku\r\n  ORDER BY (sum(oi.quantity)) DESC;\r\n\r\n\r\nALTER
+    VIEW public.vw_top_selling_products OWNER TO postgres;\r\n\r\n--\r\n-- TOC entry
+    4832 (class 2604 OID 25581)\r\n-- Name: brands id; Type: DEFAULT; Schema: public;
+    Owner: postgres\r\n--\r\n\r\nALTER TABLE ONLY public.brands ALTER COLUMN id SET
+    DEFAULT nextval('public.brands_id_seq'::regclass);\r\n\r\n\r\n--\r\n-- TOC entry
+    4831 (class 2604 OID 25570)\r\n-- Name: categories id; Type: DEFAULT; Schema:
+    public; Owner: postgres\r\n--\r\n\r\nALTER TABLE ONLY public.categories ALTER
+    COLUMN id SET DEFAULT nextval('public.categories_id_seq'::regclass);\r\n\r\n\r\n--\r\n--
+    TOC entry 4852 (class 2604 OID 25754)\r\n-- Name: clients id; Type: DEFAULT; Schema:
+    public; Owner: postgres\r\n--\r\n\r\nALTER TABLE ONLY public.clients ALTER COLUMN
+    id SET DEFAULT nextval('public.clients_id_seq'::regclass);\r\n\r\n\r\n--\r\n--
+    TOC entry 4835 (class 2604 OID 25614)\r\n-- Name: colors id; Type: DEFAULT; Schema:
+    public; Owner: postgres\r\n--\r\n\r\nALTER TABLE ONLY public.colors ALTER COLUMN
+    id SET DEFAULT nextval('public.colors_id_seq'::regclass);\r\n\r\n\r\n--\r\n--
+    TOC entry 4844 (class 2604 OID 25695)\r\n-- Name: discounts id; Type: DEFAULT;
+    Schema: public; Owner: postgres\r\n--\r\n\r\nALTER TABLE ONLY public.discounts
+    ALTER COLUMN id SET DEFAULT nextval('public.discounts_id_seq'::regclass);\r\n\r\n\r\n--\r\n--
+    TOC entry 4833 (class 2604 OID 25592)\r\n-- Name: genders id; Type: DEFAULT; Schema:
+    public; Owner: postgres\r\n--\r\n\r\nALTER TABLE ONLY public.genders ALTER COLUMN
+    id SET DEFAULT nextval('public.genders_id_seq'::regclass);\r\n\r\n\r\n--\r\n--
+    TOC entry 4859 (class 2604 OID 25805)\r\n-- Name: order_items id; Type: DEFAULT;
+    Schema: public; Owner: postgres\r\n--\r\n\r\nALTER TABLE ONLY public.order_items
+    ALTER COLUMN id SET DEFAULT nextval('public.order_items_id_seq'::regclass);\r\n\r\n\r\n--\r\n--
+    TOC entry 4854 (class 2604 OID 25781)\r\n-- Name: orders id; Type: DEFAULT; Schema:
+    public; Owner: postgres\r\n--\r\n\r\nALTER TABLE ONLY public.orders ALTER COLUMN
+    id SET DEFAULT nextval('public.orders_id_seq'::regclass);\r\n\r\n\r\n--\r\n--
+    TOC entry 4840 (class 2604 OID 25653)\r\n-- Name: product_variants id; Type: DEFAULT;
+    Schema: public; Owner: postgres\r\n--\r\n\r\nALTER TABLE ONLY public.product_variants
+    ALTER COLUMN id SET DEFAULT nextval('public.product_variants_id_seq'::regclass);\r\n\r\n\r\n--\r\n--
+    TOC entry 4836 (class 2604 OID 25625)\r\n-- Name: products id; Type: DEFAULT;
+    Schema: public; Owner: postgres\r\n--\r\n\r\nALTER TABLE ONLY public.products
+    ALTER COLUMN id SET DEFAULT nextval('public.products_id_seq'::regclass);\r\n\r\n\r\n--\r\n--
+    TOC entry 4848 (class 2604 OID 25723)\r\n-- Name: roles id; Type: DEFAULT; Schema:
+    public; Owner: postgres\r\n--\r\n\r\nALTER TABLE ONLY public.roles ALTER COLUMN
+    id SET DEFAULT nextval('public.roles_id_seq'::regclass);\r\n\r\n\r\n--\r\n-- TOC
+    entry 4834 (class 2604 OID 25603)\r\n-- Name: sizes id; Type: DEFAULT; Schema:
+    public; Owner: postgres\r\n--\r\n\r\nALTER TABLE ONLY public.sizes ALTER COLUMN
+    id SET DEFAULT nextval('public.sizes_id_seq'::regclass);\r\n\r\n\r\n--\r\n-- TOC
+    entry 4849 (class 2604 OID 25734)\r\n-- Name: users id; Type: DEFAULT; Schema:
+    public; Owner: postgres\r\n--\r\n\r\nALTER TABLE ONLY public.users ALTER COLUMN
+    id SET DEFAULT nextval('public.users_id_seq'::regclass);\r\n\r\n\r\n--\r\n-- TOC
+    entry 4874 (class 2606 OID 25587)\r\n-- Name: brands brands_name_key; Type: CONSTRAINT;
+    Schema: public; Owner: postgres\r\n--\r\n\r\nALTER TABLE ONLY public.brands\r\n
+    \   ADD CONSTRAINT brands_name_key UNIQUE (name);\r\n\r\n\r\n--\r\n-- TOC entry
+    4876 (class 2606 OID 25585)\r\n-- Name: brands brands_pkey; Type: CONSTRAINT;
+    Schema: public; Owner: postgres\r\n--\r\n\r\nALTER TABLE ONLY public.brands\r\n
+    \   ADD CONSTRAINT brands_pkey PRIMARY KEY (id);\r\n\r\n\r\n--\r\n-- TOC entry
+    4870 (class 2606 OID 25576)\r\n-- Name: categories categories_name_key; Type:
+    CONSTRAINT; Schema: public; Owner: postgres\r\n--\r\n\r\nALTER TABLE ONLY public.categories\r\n
+    \   ADD CONSTRAINT categories_name_key UNIQUE (name);\r\n\r\n\r\n--\r\n-- TOC
+    entry 4872 (class 2606 OID 25574)\r\n-- Name: categories categories_pkey; Type:
+    CONSTRAINT; Schema: public; Owner: postgres\r\n--\r\n\r\nALTER TABLE ONLY public.categories\r\n
+    \   ADD CONSTRAINT categories_pkey PRIMARY KEY (id);\r\n\r\n\r\n--\r\n-- TOC entry
+    4915 (class 2606 OID 25761)\r\n-- Name: clients clients_email_key; Type: CONSTRAINT;
+    Schema: public; Owner: postgres\r\n--\r\n\r\nALTER TABLE ONLY public.clients\r\n
+    \   ADD CONSTRAINT clients_email_key UNIQUE (email);\r\n\r\n\r\n--\r\n-- TOC entry
+    4917 (class 2606 OID 25759)\r\n-- Name: clients clients_pkey; Type: CONSTRAINT;
+    Schema: public; Owner: postgres\r\n--\r\n\r\nALTER TABLE ONLY public.clients\r\n
+    \   ADD CONSTRAINT clients_pkey PRIMARY KEY (id);\r\n\r\n\r\n--\r\n-- TOC entry
+    4886 (class 2606 OID 25620)\r\n-- Name: colors colors_name_key; Type: CONSTRAINT;
+    Schema: public; Owner: postgres\r\n--\r\n\r\nALTER TABLE ONLY public.colors\r\n
+    \   ADD CONSTRAINT colors_name_key UNIQUE (name);\r\n\r\n\r\n--\r\n-- TOC entry
+    4888 (class 2606 OID 25618)\r\n-- Name: colors colors_pkey; Type: CONSTRAINT;
+    Schema: public; Owner: postgres\r\n--\r\n\r\nALTER TABLE ONLY public.colors\r\n
+    \   ADD CONSTRAINT colors_pkey PRIMARY KEY (id);\r\n\r\n\r\n--\r\n-- TOC entry
+    4903 (class 2606 OID 25708)\r\n-- Name: discount_products discount_products_pkey;
+    Type: CONSTRAINT; Schema: public; Owner: postgres\r\n--\r\n\r\nALTER TABLE ONLY
+    public.discount_products\r\n    ADD CONSTRAINT discount_products_pkey PRIMARY
+    KEY (discount_id, product_id);\r\n\r\n\r\n--\r\n-- TOC entry 4901 (class 2606
+    OID 25703)\r\n-- Name: discounts discounts_pkey; Type: CONSTRAINT; Schema: public;
+    Owner: postgres\r\n--\r\n\r\nALTER TABLE ONLY public.discounts\r\n    ADD CONSTRAINT
+    discounts_pkey PRIMARY KEY (id);\r\n\r\n\r\n--\r\n-- TOC entry 4878 (class 2606
+    OID 25598)\r\n-- Name: genders genders_name_key; Type: CONSTRAINT; Schema: public;
+    Owner: postgres\r\n--\r\n\r\nALTER TABLE ONLY public.genders\r\n    ADD CONSTRAINT
+    genders_name_key UNIQUE (name);\r\n\r\n\r\n--\r\n-- TOC entry 4880 (class 2606
+    OID 25596)\r\n-- Name: genders genders_pkey; Type: CONSTRAINT; Schema: public;
+    Owner: postgres\r\n--\r\n\r\nALTER TABLE ONLY public.genders\r\n    ADD CONSTRAINT
+    genders_pkey PRIMARY KEY (id);\r\n\r\n\r\n--\r\n-- TOC entry 4923 (class 2606
+    OID 25811)\r\n-- Name: order_items order_items_pkey; Type: CONSTRAINT; Schema:
+    public; Owner: postgres\r\n--\r\n\r\nALTER TABLE ONLY public.order_items\r\n    ADD
+    CONSTRAINT order_items_pkey PRIMARY KEY (id);\r\n\r\n\r\n--\r\n-- TOC entry 4919
+    (class 2606 OID 25790)\r\n-- Name: orders orders_pkey; Type: CONSTRAINT; Schema:
+    public; Owner: postgres\r\n--\r\n\r\nALTER TABLE ONLY public.orders\r\n    ADD
+    CONSTRAINT orders_pkey PRIMARY KEY (id);\r\n\r\n\r\n--\r\n-- TOC entry 4897 (class
+    2606 OID 25662)\r\n-- Name: product_variants product_variants_pkey; Type: CONSTRAINT;
+    Schema: public; Owner: postgres\r\n--\r\n\r\nALTER TABLE ONLY public.product_variants\r\n
+    \   ADD CONSTRAINT product_variants_pkey PRIMARY KEY (id);\r\n\r\n\r\n--\r\n--
+    TOC entry 4899 (class 2606 OID 25664)\r\n-- Name: product_variants product_variants_product_id_size_id_color_id_sku_key;
+    Type: CONSTRAINT; Schema: public; Owner: postgres\r\n--\r\n\r\nALTER TABLE ONLY
+    public.product_variants\r\n    ADD CONSTRAINT product_variants_product_id_size_id_color_id_sku_key
+    UNIQUE (product_id, size_id, color_id, sku);\r\n\r\n\r\n--\r\n-- TOC entry 4893
+    (class 2606 OID 25633)\r\n-- Name: products products_pkey; Type: CONSTRAINT; Schema:
+    public; Owner: postgres\r\n--\r\n\r\nALTER TABLE ONLY public.products\r\n    ADD
+    CONSTRAINT products_pkey PRIMARY KEY (id);\r\n\r\n\r\n--\r\n-- TOC entry 4905
+    (class 2606 OID 25729)\r\n-- Name: roles roles_name_key; Type: CONSTRAINT; Schema:
+    public; Owner: postgres\r\n--\r\n\r\nALTER TABLE ONLY public.roles\r\n    ADD
+    CONSTRAINT roles_name_key UNIQUE (name);\r\n\r\n\r\n--\r\n-- TOC entry 4907 (class
+    2606 OID 25727)\r\n-- Name: roles roles_pkey; Type: CONSTRAINT; Schema: public;
+    Owner: postgres\r\n--\r\n\r\nALTER TABLE ONLY public.roles\r\n    ADD CONSTRAINT
+    roles_pkey PRIMARY KEY (id);\r\n\r\n\r\n--\r\n-- TOC entry 4882 (class 2606 OID
+    25609)\r\n-- Name: sizes sizes_name_key; Type: CONSTRAINT; Schema: public; Owner:
+    postgres\r\n--\r\n\r\nALTER TABLE ONLY public.sizes\r\n    ADD CONSTRAINT sizes_name_key
+    UNIQUE (name);\r\n\r\n\r\n--\r\n-- TOC entry 4884 (class 2606 OID 25607)\r\n--
+    Name: sizes sizes_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres\r\n--\r\n\r\nALTER
+    TABLE ONLY public.sizes\r\n    ADD CONSTRAINT sizes_pkey PRIMARY KEY (id);\r\n\r\n\r\n--\r\n--
+    TOC entry 4909 (class 2606 OID 25744)\r\n-- Name: users users_email_key; Type:
+    CONSTRAINT; Schema: public; Owner: postgres\r\n--\r\n\r\nALTER TABLE ONLY public.users\r\n
+    \   ADD CONSTRAINT users_email_key UNIQUE (email);\r\n\r\n\r\n--\r\n-- TOC entry
+    4911 (class 2606 OID 25740)\r\n-- Name: users users_pkey; Type: CONSTRAINT; Schema:
+    public; Owner: postgres\r\n--\r\n\r\nALTER TABLE ONLY public.users\r\n    ADD
+    CONSTRAINT users_pkey PRIMARY KEY (id);\r\n\r\n\r\n--\r\n-- TOC entry 4913 (class
+    2606 OID 25742)\r\n-- Name: users users_username_key; Type: CONSTRAINT; Schema:
+    public; Owner: postgres\r\n--\r\n\r\nALTER TABLE ONLY public.users\r\n    ADD
+    CONSTRAINT users_username_key UNIQUE (username);\r\n\r\n\r\n--\r\n-- TOC entry
+    4920 (class 1259 OID 25822)\r\n-- Name: idx_order_items_order; Type: INDEX; Schema:
+    public; Owner: postgres\r\n--\r\n\r\nCREATE INDEX idx_order_items_order ON public.order_items
+    USING btree (order_id);\r\n\r\n\r\n--\r\n-- TOC entry 4921 (class 1259 OID 25823)\r\n--
+    Name: idx_order_items_variant; Type: INDEX; Schema: public; Owner: postgres\r\n--\r\n\r\nCREATE
+    INDEX idx_order_items_variant ON public.order_items USING btree (product_variant_id);\r\n\r\n\r\n--\r\n--
+    TOC entry 4889 (class 1259 OID 25681)\r\n-- Name: idx_products_brand; Type: INDEX;
+    Schema: public; Owner: postgres\r\n--\r\n\r\nCREATE INDEX idx_products_brand ON
+    public.products USING btree (brand_id);\r\n\r\n\r\n--\r\n-- TOC entry 4890 (class
+    1259 OID 25680)\r\n-- Name: idx_products_category; Type: INDEX; Schema: public;
+    Owner: postgres\r\n--\r\n\r\nCREATE INDEX idx_products_category ON public.products
+    USING btree (category_id);\r\n\r\n\r\n--\r\n-- TOC entry 4891 (class 1259 OID
+    25682)\r\n-- Name: idx_products_gender; Type: INDEX; Schema: public; Owner: postgres\r\n--\r\n\r\nCREATE
+    INDEX idx_products_gender ON public.products USING btree (gender_id);\r\n\r\n\r\n--\r\n--
+    TOC entry 4894 (class 1259 OID 25683)\r\n-- Name: idx_variants_product; Type:
+    INDEX; Schema: public; Owner: postgres\r\n--\r\n\r\nCREATE INDEX idx_variants_product
+    ON public.product_variants USING btree (product_id);\r\n\r\n\r\n--\r\n-- TOC entry
+    4895 (class 1259 OID 25684)\r\n-- Name: idx_variants_sku; Type: INDEX; Schema:
+    public; Owner: postgres\r\n--\r\n\r\nCREATE INDEX idx_variants_sku ON public.product_variants
+    USING btree (sku);\r\n\r\n\r\n--\r\n-- TOC entry 4939 (class 2620 OID 25848)\r\n--
+    Name: orders trg_orders_calc_total; Type: TRIGGER; Schema: public; Owner: postgres\r\n--\r\n\r\nCREATE
+    TRIGGER trg_orders_calc_total BEFORE INSERT OR UPDATE ON public.orders FOR EACH
+    ROW EXECUTE FUNCTION public.fn_calc_order_total();\r\n\r\n\r\n--\r\n-- TOC entry
+    4940 (class 2620 OID 25827)\r\n-- Name: orders trg_orders_updated_at; Type: TRIGGER;
+    Schema: public; Owner: postgres\r\n--\r\n\r\nCREATE TRIGGER trg_orders_updated_at
+    BEFORE UPDATE ON public.orders FOR EACH ROW EXECUTE FUNCTION public.trg_set_updated_at();\r\n\r\n\r\n--\r\n--
+    TOC entry 4937 (class 2620 OID 25825)\r\n-- Name: products trg_products_updated_at;
+    Type: TRIGGER; Schema: public; Owner: postgres\r\n--\r\n\r\nCREATE TRIGGER trg_products_updated_at
+    BEFORE UPDATE ON public.products FOR EACH ROW EXECUTE FUNCTION public.trg_set_updated_at();\r\n\r\n\r\n--\r\n--
+    TOC entry 4938 (class 2620 OID 25826)\r\n-- Name: product_variants trg_variants_updated_at;
+    Type: TRIGGER; Schema: public; Owner: postgres\r\n--\r\n\r\nCREATE TRIGGER trg_variants_updated_at
+    BEFORE UPDATE ON public.product_variants FOR EACH ROW EXECUTE FUNCTION public.trg_set_updated_at();\r\n\r\n\r\n--\r\n--
+    TOC entry 4930 (class 2606 OID 25709)\r\n-- Name: discount_products discount_products_discount_id_fkey;
+    Type: FK CONSTRAINT; Schema: public; Owner: postgres\r\n--\r\n\r\nALTER TABLE
+    ONLY public.discount_products\r\n    ADD CONSTRAINT discount_products_discount_id_fkey
+    FOREIGN KEY (discount_id) REFERENCES public.discounts(id) ON DELETE CASCADE;\r\n\r\n\r\n--\r\n--
+    TOC entry 4931 (class 2606 OID 25714)\r\n-- Name: discount_products discount_products_product_id_fkey;
+    Type: FK CONSTRAINT; Schema: public; Owner: postgres\r\n--\r\n\r\nALTER TABLE
+    ONLY public.discount_products\r\n    ADD CONSTRAINT discount_products_product_id_fkey
+    FOREIGN KEY (product_id) REFERENCES public.products(id) ON DELETE CASCADE;\r\n\r\n\r\n--\r\n--
+    TOC entry 4935 (class 2606 OID 25812)\r\n-- Name: order_items order_items_order_id_fkey;
+    Type: FK CONSTRAINT; Schema: public; Owner: postgres\r\n--\r\n\r\nALTER TABLE
+    ONLY public.order_items\r\n    ADD CONSTRAINT order_items_order_id_fkey FOREIGN
+    KEY (order_id) REFERENCES public.orders(id) ON DELETE CASCADE;\r\n\r\n\r\n--\r\n--
+    TOC entry 4936 (class 2606 OID 25817)\r\n-- Name: order_items order_items_product_variant_id_fkey;
+    Type: FK CONSTRAINT; Schema: public; Owner: postgres\r\n--\r\n\r\nALTER TABLE
+    ONLY public.order_items\r\n    ADD CONSTRAINT order_items_product_variant_id_fkey
+    FOREIGN KEY (product_variant_id) REFERENCES public.product_variants(id) ON DELETE
+    RESTRICT;\r\n\r\n\r\n--\r\n-- TOC entry 4933 (class 2606 OID 25791)\r\n-- Name:
+    orders orders_client_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres\r\n--\r\n\r\nALTER
+    TABLE ONLY public.orders\r\n    ADD CONSTRAINT orders_client_id_fkey FOREIGN KEY
+    (client_id) REFERENCES public.clients(id) ON DELETE SET NULL;\r\n\r\n\r\n--\r\n--
+    TOC entry 4934 (class 2606 OID 25796)\r\n-- Name: orders orders_created_by_fkey;
+    Type: FK CONSTRAINT; Schema: public; Owner: postgres\r\n--\r\n\r\nALTER TABLE
+    ONLY public.orders\r\n    ADD CONSTRAINT orders_created_by_fkey FOREIGN KEY (created_by)
+    REFERENCES public.users(id) ON DELETE SET NULL;\r\n\r\n\r\n--\r\n-- TOC entry
+    4927 (class 2606 OID 25675)\r\n-- Name: product_variants product_variants_color_id_fkey;
+    Type: FK CONSTRAINT; Schema: public; Owner: postgres\r\n--\r\n\r\nALTER TABLE
+    ONLY public.product_variants\r\n    ADD CONSTRAINT product_variants_color_id_fkey
+    FOREIGN KEY (color_id) REFERENCES public.colors(id) ON DELETE SET NULL;\r\n\r\n\r\n--\r\n--
+    TOC entry 4928 (class 2606 OID 25665)\r\n-- Name: product_variants product_variants_product_id_fkey;
+    Type: FK CONSTRAINT; Schema: public; Owner: postgres\r\n--\r\n\r\nALTER TABLE
+    ONLY public.product_variants\r\n    ADD CONSTRAINT product_variants_product_id_fkey
+    FOREIGN KEY (product_id) REFERENCES public.products(id) ON DELETE CASCADE;\r\n\r\n\r\n--\r\n--
+    TOC entry 4929 (class 2606 OID 25670)\r\n-- Name: product_variants product_variants_size_id_fkey;
+    Type: FK CONSTRAINT; Schema: public; Owner: postgres\r\n--\r\n\r\nALTER TABLE
+    ONLY public.product_variants\r\n    ADD CONSTRAINT product_variants_size_id_fkey
+    FOREIGN KEY (size_id) REFERENCES public.sizes(id) ON DELETE SET NULL;\r\n\r\n\r\n--\r\n--
+    TOC entry 4924 (class 2606 OID 25639)\r\n-- Name: products products_brand_id_fkey;
+    Type: FK CONSTRAINT; Schema: public; Owner: postgres\r\n--\r\n\r\nALTER TABLE
+    ONLY public.products\r\n    ADD CONSTRAINT products_brand_id_fkey FOREIGN KEY
+    (brand_id) REFERENCES public.brands(id) ON DELETE SET NULL;\r\n\r\n\r\n--\r\n--
+    TOC entry 4925 (class 2606 OID 25634)\r\n-- Name: products products_category_id_fkey;
+    Type: FK CONSTRAINT; Schema: public; Owner: postgres\r\n--\r\n\r\nALTER TABLE
+    ONLY public.products\r\n    ADD CONSTRAINT products_category_id_fkey FOREIGN KEY
+    (category_id) REFERENCES public.categories(id) ON DELETE SET NULL;\r\n\r\n\r\n--\r\n--
+    TOC entry 4926 (class 2606 OID 25644)\r\n-- Name: products products_gender_id_fkey;
+    Type: FK CONSTRAINT; Schema: public; Owner: postgres\r\n--\r\n\r\nALTER TABLE
+    ONLY public.products\r\n    ADD CONSTRAINT products_gender_id_fkey FOREIGN KEY
+    (gender_id) REFERENCES public.genders(id) ON DELETE SET NULL;\r\n\r\n\r\n--\r\n--
+    TOC entry 4932 (class 2606 OID 25745)\r\n-- Name: users users_role_id_fkey; Type:
+    FK CONSTRAINT; Schema: public; Owner: postgres\r\n--\r\n\r\nALTER TABLE ONLY public.users\r\n
+    \   ADD CONSTRAINT users_role_id_fkey FOREIGN KEY (role_id) REFERENCES public.roles(id)
+    ON DELETE SET NULL;\r\n\r\n\r\n-- Completed on 2026-02-21 02:43:27\r\n\r\n--\r\n--
+    PostgreSQL database dump complete\r\n--\r\n\r\n"
+  02-seed.sql: "--\r\n-- PostgreSQL database dump\r\n--\r\n-- Dumped from database
+    version 17.4\r\n-- Dumped by pg_dump version 17.4\r\n--\r\n\r\n-- Make imports
+    stable across Postgres 16/17\r\nSET statement_timeout = 0;\r\nSET lock_timeout
+    = 0;\r\nSET idle_in_transaction_session_timeout = 0;\r\n-- NOTE: Postgres 16 does
+    NOT support transaction_timeout, so DO NOT set it\r\nSET client_encoding = 'UTF8';\r\nSET
+    standard_conforming_strings = on;\r\n\r\n-- Force schema\r\nSELECT pg_catalog.set_config('search_path',
+    'public', false);\r\n\r\nSET check_function_bodies = false;\r\nSET xmloption =
+    content;\r\nSET client_min_messages = warning;\r\nSET row_security = off;\r\n\r\n--
+    Disable triggers/constraints during COPY to avoid trigger errors while loading\r\nSET
+    session_replication_role = replica;\r\n--\r\n-- TOC entry 5055 (class 0 OID 25578)\r\n--
+    Dependencies: 220\r\n-- Data for Name: brands; Type: TABLE DATA; Schema: public;
+    Owner: postgres\r\n--\r\n\r\nCOPY public.brands (id, name, description) FROM stdin;\r\n1\tNike\tSportswear\r\n2\tAdidas\tAthletic
+    clothing\r\n3\tZara\tFast fashion\r\n4\tTommy Hilfiger\tPremium casual wear\r\n5\tPuma\tSports
+    clothing\r\n6\tH&M\tAffordable fashion\r\n\\.\r\n\r\n\r\n--\r\n-- TOC entry 5053
+    (class 0 OID 25567)\r\n-- Dependencies: 218\r\n-- Data for Name: categories; Type:
+    TABLE DATA; Schema: public; Owner: postgres\r\n--\r\n\r\nCOPY public.categories
+    (id, name, description) FROM stdin;\r\n3\tJackets\tWinter and light jackets\r\n4\tShoes\tSneakers,
+    boots, sandals\r\n5\tAccessories\tBelts, hats, watches\r\n11\tUnderwear\tCategory\r\n14\tSOCKS\tCategory\r\n\\.\r\n\r\n\r\n--\r\n--
+    TOC entry 5074 (class 0 OID 25751)\r\n-- Dependencies: 239\r\n-- Data for Name:
+    clients; Type: TABLE DATA; Schema: public; Owner: postgres\r\n--\r\n\r\nCOPY public.clients
+    (id, first_name, last_name, email, phone, address, city, postal_code, country,
+    created_at) FROM stdin;\r\n1\tJohn\tDoe\tjohn@example.com\t123456789\tStreet 1\tSkopje\t1000\tNorth
+    Macedonia\t2025-11-22 16:36:57.530916+01\r\n2\tMaria\tPetrova\tmaria@example.com\t987654321\tStreet
+    2\tTetovo\t1200\tNorth Macedonia\t2025-11-22 16:36:57.530916+01\r\n3\tMoris\tMoris\tmoris@gmail.com\t123123123\taddr\tCity\t123\tcount\t2025-11-28
+    17:22:13.715346+01\r\n4\txadsad\tadssad\tnew@example.com\t21321412412\tdsadas\tsafgdssfhsf\t124323\tdsfvsdv\t2026-02-05
+    01:38:21.937377+01\r\n5\tnaki\tnaki\tnaki@example.com\t123456789\tasas\tasasa\t111\tasdasd\t2026-02-06
+    01:05:14.046944+01\r\n\\.\r\n\r\n\r\n--\r\n-- TOC entry 5061 (class 0 OID 25611)\r\n--
+    Dependencies: 226\r\n-- Data for Name: colors; Type: TABLE DATA; Schema: public;
+    Owner: postgres\r\n--\r\n\r\nCOPY public.colors (id, name) FROM stdin;\r\n1\tBlack\r\n2\tWhite\r\n3\tRed\r\n4\tBlue\r\n5\tGreen\r\n6\tGray\r\n\\.\r\n\r\n\r\n--\r\n--
+    TOC entry 5067 (class 0 OID 25692)\r\n-- Dependencies: 232\r\n-- Data for Name:
+    discounts; Type: TABLE DATA; Schema: public; Owner: postgres\r\n--\r\n\r\nCOPY
+    public.discounts (id, name, type, value, start_date, end_date, active, created_at)
+    FROM stdin;\r\n20\tSocks\tpercent\t100.00\t2026-02-06\t2026-02-08\tt\t2026-02-06
+    00:10:31.122254+01\r\n21\tSocks\tpercent\t50.00\t2026-02-07\t2026-02-07\tt\t2026-02-07
+    17:40:56.132618+01\r\n\\.\r\n\r\n\r\n--\r\n-- TOC entry 5057 (class 0 OID 25589)\r\n--
+    Dependencies: 222\r\n-- Data for Name: genders; Type: TABLE DATA; Schema: public;
+    Owner: postgres\r\n--\r\n\r\nCOPY public.genders (id, name) FROM stdin;\r\n1\tMen\r\n2\tWomen\r\n3\tChildren\r\n4\tUnisex\r\n\\.\r\n\r\n\r\n--\r\n--
+    TOC entry 5063 (class 0 OID 25622)\r\n-- Dependencies: 228\r\n-- Data for Name:
+    products; Type: TABLE DATA; Schema: public; Owner: postgres\r\n--\r\n\r\nCOPY
+    public.products (id, name, description, category_id, brand_id, gender_id, default_price,
+    active, created_at, updated_at, deleted_at) FROM stdin;\r\n4\tPuma Running Shoes\tLightweight
+    running shoes\t4\t5\t4\t60.00\tt\t2025-11-22 16:36:57.530916+01\t2025-11-22 16:36:57.530916+01\t\\N\r\n29\tGraphQL
+    hoodie\tCreated via GraphQL from Postman\t3\t2\t1\t149.00\tt\t2026-02-19 01:18:41.761101+01\t2026-02-19
+    13:37:48.170659+01\t\\N\r\n6\tTest Product\tDesc\t\\N\t1\t1\t19.99\tt\t2025-11-23
+    19:22:14.729102+01\t2025-11-23 20:49:02.162787+01\t\\N\r\n11\tShoes\tShoes\t3\t2\t1\t120.00\tt\t2025-11-24
+    01:24:41.736675+01\t2025-11-24 01:24:41.736675+01\t\\N\r\n16\th&m\tclothes\t11\t\\N\t1\t8.99\tt\t2025-11-27
+    20:32:56.197411+01\t2025-11-27 20:32:56.197411+01\t\\N\r\n12\tSocks\tShort and
+    long\t3\t2\t1\t120.00\tt\t2025-11-27 18:10:02.86569+01\t2025-11-27 20:43:46.446831+01\t2025-11-27
+    20:43:46.446831\r\n30\tGraphQL hoodie\tCreated via GraphQL from Postman\t3\t2\t1\t149.00\tt\t2026-02-19
+    13:28:25.563647+01\t2026-02-19 13:38:05.038409+01\t\\N\r\n31\tGraphQL hoodie\tCreated
+    via GraphQL from Postman\t3\t2\t1\t149.00\tt\t2026-02-19 14:22:55.373077+01\t2026-02-19
+    14:22:55.373077+01\t\\N\r\n20\ttesting\tdse\t3\t5\t2\t45.00\tt\t2025-11-28 18:23:09.397555+01\t2025-11-28
+    18:26:58.561188+01\t\\N\r\n19\tPhilips Morise\tPS\t3\t5\t1\t25.00\tt\t2025-11-28
+    18:12:34.134534+01\t2025-11-28 18:33:03.400382+01\t\\N\r\n5\tTest Product\tDesc\t\\N\t1\t1\t19.99\tt\t2025-11-23
+    19:14:19.317798+01\t2025-11-28 21:47:16.691321+01\t2025-11-28 21:47:16.691321\r\n2\tAdiddas\tWarm
+    hoodie for training and casual wear\t3\t2\t2\t45.00\tt\t2025-11-22 16:36:57.530916+01\t2025-11-28
+    22:46:49.173293+01\t\\N\r\n21\tSocks\tShort and long\t3\t2\t1\t120.00\tt\t2025-11-28
+    21:32:59.514796+01\t2025-11-28 22:47:36.933254+01\t2025-11-28 22:47:36.933254\r\n3\tZara
+    Jeans\tSlim fit casual jeans\t\\N\t3\t1\t35.00\tt\t2025-11-22 16:36:57.530916+01\t2025-11-28
+    22:51:19.753694+01\t\\N\r\n18\tzara\tjackets\t\\N\t3\t2\t55.00\tt\t2025-11-27
+    20:36:23.100479+01\t2025-11-28 22:51:19.753694+01\t\\N\r\n24\th&m\tsocks\t3\t3\t2\t5.00\tt\t2026-02-07
+    02:57:07.170333+01\t2026-02-07 02:57:07.170333+01\t\\N\r\n22\tSocks (Updated via
+    GraphQL)\tUpdated via GraphQL\t3\t2\t1\t130.00\tt\t2025-11-28 22:45:36.799771+01\t2026-02-07
+    16:52:57.281012+01\t2026-02-07 16:52:57.281012\r\n25\tGraphQL Test Product\tCreated
+    via GraphQL\t3\t2\t1\t199.00\tt\t2026-02-07 16:51:25.728247+01\t2026-02-07 17:37:56.870503+01\t\\N\r\n26\tNew
+    Jacket\tWinter jacket\t3\t2\t1\t199.90\tt\t2026-02-07 20:55:47.374861+01\t2026-02-07
+    20:55:47.374861+01\t\\N\r\n27\tGraphQL Jacket\tCreated via GraphQL from Postman\t3\t2\t1\t149.00\tt\t2026-02-07
+    21:12:28.920508+01\t2026-02-07 21:12:28.920508+01\t\\N\r\n28\tGraphQL hoodie\tCreated
+    via GraphQL from Postman\t3\t2\t1\t149.00\tt\t2026-02-07 23:15:33.652796+01\t2026-02-07
+    23:15:33.652796+01\t\\N\r\n1\tRenamed Product\tUpdated from Postman\t\\N\t1\t1\t123.45\tt\t2025-11-22
+    16:36:57.530916+01\t2026-02-19 13:32:51.980441+01\t2026-02-19 13:32:51.980441\r\n\\.\r\n\r\n\r\n--\r\n--
+    TOC entry 5068 (class 0 OID 25704)\r\n-- Dependencies: 233\r\n-- Data for Name:
+    discount_products; Type: TABLE DATA; Schema: public; Owner: postgres\r\n--\r\n\r\nCOPY
+    public.discount_products (discount_id, product_id) FROM stdin;\r\n20\t1\r\n21\t3\r\n\\.\r\n\r\n\r\n--\r\n--
+    TOC entry 5070 (class 0 OID 25720)\r\n-- Dependencies: 235\r\n-- Data for Name:
+    roles; Type: TABLE DATA; Schema: public; Owner: postgres\r\n--\r\n\r\nCOPY public.roles
+    (id, name) FROM stdin;\r\n1\tadmin\r\n2\tadvanced_user\r\n3\tsimple_user\r\n\\.\r\n\r\n\r\n--\r\n--
+    TOC entry 5072 (class 0 OID 25731)\r\n-- Dependencies: 237\r\n-- Data for Name:
+    users; Type: TABLE DATA; Schema: public; Owner: postgres\r\n--\r\n\r\nCOPY public.users
+    (id, username, email, password_hash, role_id, is_active, created_at, last_login)
+    FROM stdin;\r\n2\tadvanced\tadvanced@example.com\thashed_password\t2\tt\t2025-11-22
+    16:36:57.530916+01\t\\N\r\n3\tsimple\tsimple@example.com\thashed_password\t3\tt\t2025-11-22
+    16:36:57.530916+01\t\\N\r\n6\tadmin3\tadmin3@store.com\t$2b$10$8VlW7x1YgnPZXoqBYwyg0u0zbCwJ1U8BqHoYBeVqtnz/1QLPW07iK\t1\tt\t2025-11-23
+    18:32:27.722161+01\t\\N\r\n7\tnaki\tnew@example.com\t$2b$10$zD7pJ29Z7CtA3BgMcmPKVuotCng568B/BJ3hohC888.kIEU7OezBO\t1\tt\t2025-11-23
+    18:42:52.20617+01\t\\N\r\n9\tensar\tu1@example.com\t$2b$10$5qYXySYYsXyAFXbDIThQLeOLiCuLROr7ZrqpAGftlnA5QbCJiey8m\t3\tt\t2025-11-23
+    21:24:05.783958+01\t\\N\r\n1\tali\talii@example.com\t$2b$10$mE3BISoRpzcSUmoSOrjH3eOWboei2VxlJVGdUy8tZCTlwFEShJlLa\t1\tt\t2025-11-22
+    16:36:57.530916+01\t\\N\r\n13\tcali\tnew1@example.com\t$2b$10$kfq5BAMLFd1S.WhFkvfsE.MWw7O5AeeyMw3yAaQnxXNVCSUveNBgi\t3\tt\t2025-11-28
+    00:04:36.343515+01\t\\N\r\n23\tUser\tadmin@example.com\t$2b$10$f6XeFji5VbN2yI3fPvMPqe4i40eZppT9DMnpqQkFVAOuEwhSUGYi.\t3\tt\t2026-02-07
+    01:53:22.192273+01\t\\N\r\n24\tAa\taa@example.com\t$2b$10$u6c7bfOd.o9qJbWQN0kvBOzdJmAcsq9OZC7uEbwb5MvkveQr0hZTW\t3\tt\t2026-02-07
+    21:33:57.696993+01\t\\N\r\n25\tSecond Admin\tadmin2@example.com\t$2b$10$i6R3rLxHBtAwmjvfrn7J8OtZVdEHODEf6nuiiBXCMhHxsW2CtCkAq\t3\tt\t2026-02-07
+    21:37:57.072832+01\t\\N\r\n26\tnakii\tw11@example.com\t$2b$10$zbqWWppoyPQRGdCzgv3yFuEkjLhtiHQyhBFOz2KNNAarN6128R44G\t3\tt\t2026-02-07
+    21:40:59.463986+01\t\\N\r\n28\tnak9ii\tww11@example.com\t$2b$10$D8utDpQDY3JBNTkeqcr/P.PkgxP/UjoxDBXf.IXGiNx/O5FWFE9r2\t3\tt\t2026-02-07
+    21:41:31.528606+01\t\\N\r\n\\.\r\n\r\n\r\n--\r\n-- TOC entry 5076 (class 0 OID
+    25778)\r\n-- Dependencies: 241\r\n-- Data for Name: orders; Type: TABLE DATA;
+    Schema: public; Owner: postgres\r\n--\r\n\r\nCOPY public.orders (id, client_id,
+    created_by, status, payment_method, total_amount, created_at, updated_at) FROM
+    stdin;\r\n2\t2\t2\tprocessing\tcash\t0.00\t2025-11-22 16:36:57.530916+01\t2025-11-22
+    16:36:57.530916+01\r\n3\t1\t1\tpending\tcard\t50.00\t2025-11-23 21:13:11.470892+01\t2025-11-23
+    21:13:11.470892+01\r\n5\t1\t1\tconfirmed\tcard\t135.00\t2025-11-24 01:32:06.493573+01\t2026-02-07
+    17:17:38.784004+01\r\n31\t5\t\\N\tconfirmed\tcash\t95.00\t2026-02-07 17:04:47.478365+01\t2026-02-07
+    17:17:53.424912+01\r\n6\t1\t1\tprocessing\tcard\t135.00\t2025-11-27 22:05:25.444604+01\t2025-11-27
+    22:09:21.401487+01\r\n4\t1\t1\tpending\tcard\t50.00\t2025-11-23 21:20:40.627028+01\t2025-11-27
+    22:09:27.520201+01\r\n7\t1\t1\tcancelled\tcard\t135.00\t2025-11-27 22:14:09.490132+01\t2025-11-28
+    00:03:36.666714+01\r\n8\t1\t1\tpending\tcard\t135.00\t2025-11-28 00:06:38.298218+01\t2025-11-28
+    00:06:38.298218+01\r\n10\t1\t13\tpending\tcard\t135.00\t2025-11-28 00:09:58.473907+01\t2025-11-28
+    00:09:58.473907+01\r\n13\t1\t13\tpending\tcard\t135.00\t2025-11-28 00:22:35.098843+01\t2025-11-28
+    00:22:35.098843+01\r\n14\t2\t13\tpending\tcard\t135.00\t2025-11-28 00:22:48.763976+01\t2025-11-28
+    00:22:48.763976+01\r\n17\t1\t1\tpending\tcard\t135.00\t2025-11-28 01:19:01.969742+01\t2025-11-28
+    01:19:01.969742+01\r\n18\t2\t\\N\tpending\tcard\t135.00\t2025-11-28 01:49:17.718815+01\t2025-11-28
+    01:49:17.718815+01\r\n33\t4\t7\tcancelled\tcard\t155.00\t2026-02-07 17:38:24.329033+01\t2026-02-07
+    17:38:41.373191+01\r\n20\t2\t2\tcancelled\tcard\t135.00\t2025-11-28 01:52:00.509461+01\t2025-11-28
+    02:11:03.848295+01\r\n34\t5\t\\N\tprocessing\tcash\t95.00\t2026-02-07 20:57:15.616329+01\t2026-02-07
+    21:04:58.405196+01\r\n19\t2\t1\tconfirmed\tcard\t135.00\t2025-11-28 01:51:31.682337+01\t2025-11-28
+    18:41:08.344338+01\r\n23\t2\t2\tpending\tcard\t135.00\t2025-11-28 22:07:15.465897+01\t2025-11-28
+    22:07:15.465897+01\r\n21\t3\t\\N\tconfirmed\tcard\t135.00\t2025-11-28 17:22:13.725565+01\t2025-11-28
+    22:16:40.300424+01\r\n22\t3\t\\N\tconfirmed\tcard\t180.00\t2025-11-28 17:39:00.937585+01\t2025-11-28
+    22:16:40.300424+01\r\n1\t1\t1\tprocessing\tcredit_card\t85.00\t2025-11-22 16:36:57.530916+01\t2025-11-28
+    22:25:02.477052+01\r\n24\t2\t2\tpending\tcard\t135.00\t2025-11-28 22:56:43.995693+01\t2025-11-28
+    22:56:43.995693+01\r\n25\t4\t7\tpending\tcard\t70.00\t2026-02-05 01:38:21.950764+01\t2026-02-05
+    01:38:21.950764+01\r\n27\t4\t7\tprocessing\tcard\t35.00\t2026-02-05 02:20:46.447313+01\t2026-02-05
+    23:00:08.388984+01\r\n26\t4\t7\tcancelled\tcard\t35.00\t2026-02-05 02:08:48.052785+01\t2026-02-05
+    23:00:22.821454+01\r\n30\t5\t\\N\tcancelled\tcash\t95.00\t2026-02-06 01:30:39.336496+01\t2026-02-06
+    02:01:20.141133+01\r\n28\t5\t\\N\tconfirmed\tcash\t95.00\t2026-02-06 01:05:14.049218+01\t2026-02-06
+    02:01:22.793171+01\r\n\\.\r\n\r\n\r\n--\r\n-- TOC entry 5059 (class 0 OID 25600)\r\n--
+    Dependencies: 224\r\n-- Data for Name: sizes; Type: TABLE DATA; Schema: public;
+    Owner: postgres\r\n--\r\n\r\nCOPY public.sizes (id, name) FROM stdin;\r\n1\tXS\r\n2\tS\r\n3\tM\r\n4\tL\r\n5\tXL\r\n6\tXXL\r\n\\.\r\n\r\n\r\n--\r\n--
+    TOC entry 5065 (class 0 OID 25650)\r\n-- Dependencies: 230\r\n-- Data for Name:
+    product_variants; Type: TABLE DATA; Schema: public; Owner: postgres\r\n--\r\n\r\nCOPY
+    public.product_variants (id, product_id, size_id, color_id, sku, price, initial_quantity,
+    created_at, updated_at, deleted_at) FROM stdin;\r\n2\t1\t4\t2\tNIKE-TSHIRT-L-WHT\t25.00\t80\t2025-11-22
+    16:36:57.530916+01\t2025-11-23 20:16:26.158761+01\t2025-11-23 20:16:26.158761\r\n5\t3\t3\t4\tZARA-JEANS-M-BLU\t35.00\t58\t2025-11-22
+    16:36:57.530916+01\t2025-11-27 21:14:52.251454+01\t\\N\r\n6\t4\t4\t1\tPUMA-SHOES-L-BLK\t60.00\t37\t2025-11-22
+    16:36:57.530916+01\t2025-11-28 17:39:26.285202+01\t\\N\r\n7\t19\t4\t1\t1234\t25.00\t50\t2025-11-28
+    18:31:54.420675+01\t2025-11-28 18:33:03.400382+01\t\\N\r\n8\t19\t2\t1\t50\t100.00\t25\t2025-11-28
+    18:33:03.400382+01\t2025-11-28 18:33:03.400382+01\t\\N\r\n4\t2\t3\t6\tADI-HOODIE-M-GRY\t45.00\t28\t2025-11-22
+    16:36:57.530916+01\t2025-11-28 21:37:44.679687+01\t\\N\r\n9\t18\t2\t1\tZARA-JACKETS-M-BLK\t55.00\t10\t2026-02-05
+    23:14:55.375482+01\t2026-02-05 23:14:55.375482+01\t\\N\r\n10\t22\t4\t1\t\\N\t120.00\t0\t2026-02-06
+    00:11:28.739254+01\t2026-02-06 00:11:28.739254+01\t\\N\r\n1\t1\t3\t1\tNIKE-TSHIRT-M-BLK\t25.00\t84\t2025-11-22
+    16:36:57.530916+01\t2026-02-07 17:23:16.897007+01\t2025-11-23 20:16:26.158761\r\n3\t2\t2\t4\tADI-HOODIE-S-BLU\t45.00\t28\t2025-11-22
+    16:36:57.530916+01\t2026-02-07 17:23:16.897007+01\t\\N\r\n12\t29\t4\t1\t\\N\t149.00\t3\t2026-02-19
+    13:37:48.170659+01\t2026-02-19 13:37:48.170659+01\t\\N\r\n11\t30\t4\t1\t\\N\t149.00\t5\t2026-02-19
+    13:37:35.149186+01\t2026-02-19 13:38:05.038409+01\t\\N\r\n13\t30\t3\t1\t\\N\t149.00\t3\t2026-02-19
+    13:38:05.038409+01\t2026-02-19 13:38:05.038409+01\t\\N\r\n\\.\r\n\r\n\r\n--\r\n--
+    TOC entry 5078 (class 0 OID 25802)\r\n-- Dependencies: 243\r\n-- Data for Name:
+    order_items; Type: TABLE DATA; Schema: public; Owner: postgres\r\n--\r\n\r\nCOPY
+    public.order_items (id, order_id, product_variant_id, unit_price, quantity, subtotal,
+    created_at) FROM stdin;\r\n1\t1\t1\t25.00\t2\t50.00\t2025-11-22 16:36:57.530916+01\r\n2\t1\t5\t35.00\t1\t35.00\t2025-11-22
+    16:36:57.530916+01\r\n3\t2\t4\t45.00\t1\t45.00\t2025-11-22 16:36:57.530916+01\r\n4\t3\t1\t25.00\t2\t50.00\t2025-11-23
+    21:13:11.470892+01\r\n5\t4\t1\t25.00\t2\t50.00\t2025-11-23 21:20:40.627028+01\r\n6\t5\t3\t45.00\t3\t135.00\t2025-11-24
+    01:32:06.493573+01\r\n7\t6\t3\t45.00\t3\t135.00\t2025-11-27 22:05:25.444604+01\r\n8\t7\t3\t45.00\t3\t135.00\t2025-11-27
+    22:14:09.490132+01\r\n9\t8\t3\t45.00\t3\t135.00\t2025-11-28 00:06:38.298218+01\r\n10\t10\t3\t45.00\t3\t135.00\t2025-11-28
+    00:09:58.473907+01\r\n11\t13\t3\t45.00\t3\t135.00\t2025-11-28 00:22:35.098843+01\r\n12\t14\t3\t45.00\t3\t135.00\t2025-11-28
+    00:22:48.763976+01\r\n13\t17\t3\t45.00\t3\t135.00\t2025-11-28 01:19:01.969742+01\r\n14\t18\t3\t45.00\t3\t135.00\t2025-11-28
+    01:49:17.718815+01\r\n15\t19\t3\t45.00\t3\t135.00\t2025-11-28 01:51:31.682337+01\r\n16\t20\t3\t45.00\t3\t135.00\t2025-11-28
+    01:52:00.509461+01\r\n17\t21\t4\t45.00\t2\t90.00\t2025-11-28 17:22:13.725565+01\r\n18\t21\t3\t45.00\t1\t45.00\t2025-11-28
+    17:22:13.725565+01\r\n19\t22\t6\t60.00\t3\t180.00\t2025-11-28 17:39:00.937585+01\r\n20\t23\t3\t45.00\t3\t135.00\t2025-11-28
+    22:07:15.465897+01\r\n21\t24\t3\t45.00\t3\t135.00\t2025-11-28 22:56:43.995693+01\r\n22\t25\t5\t35.00\t2\t70.00\t2026-02-05
+    01:38:21.950764+01\r\n23\t26\t5\t35.00\t1\t35.00\t2026-02-05 02:08:48.052785+01\r\n24\t27\t5\t35.00\t1\t35.00\t2026-02-05
+    02:20:46.447313+01\r\n25\t28\t1\t25.00\t2\t50.00\t2026-02-06 01:05:14.049218+01\r\n26\t28\t3\t45.00\t1\t45.00\t2026-02-06
+    01:05:14.049218+01\r\n29\t30\t1\t25.00\t2\t50.00\t2026-02-06 01:30:39.336496+01\r\n30\t30\t3\t45.00\t1\t45.00\t2026-02-06
+    01:30:39.336496+01\r\n31\t31\t1\t25.00\t2\t50.00\t2026-02-07 17:04:47.478365+01\r\n32\t31\t3\t45.00\t1\t45.00\t2026-02-07
+    17:04:47.478365+01\r\n35\t33\t10\t120.00\t1\t120.00\t2026-02-07 17:38:24.329033+01\r\n36\t33\t5\t35.00\t1\t35.00\t2026-02-07
+    17:38:24.329033+01\r\n37\t34\t1\t25.00\t2\t50.00\t2026-02-07 20:57:15.616329+01\r\n38\t34\t3\t45.00\t1\t45.00\t2026-02-07
+    20:57:15.616329+01\r\n\\.\r\n\r\n\r\n--\r\n-- TOC entry 5084 (class 0 OID 0)\r\n--
+    Dependencies: 219\r\n-- Name: brands_id_seq; Type: SEQUENCE SET; Schema: public;
+    Owner: postgres\r\n--\r\n\r\nSELECT pg_catalog.setval('public.brands_id_seq',
+    6, true);\r\n\r\n\r\n--\r\n-- TOC entry 5085 (class 0 OID 0)\r\n-- Dependencies:
+    217\r\n-- Name: categories_id_seq; Type: SEQUENCE SET; Schema: public; Owner:
+    postgres\r\n--\r\n\r\nSELECT pg_catalog.setval('public.categories_id_seq', 14,
+    true);\r\n\r\n\r\n--\r\n-- TOC entry 5086 (class 0 OID 0)\r\n-- Dependencies:
+    238\r\n-- Name: clients_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres\r\n--\r\n\r\nSELECT
+    pg_catalog.setval('public.clients_id_seq', 5, true);\r\n\r\n\r\n--\r\n-- TOC entry
+    5087 (class 0 OID 0)\r\n-- Dependencies: 225\r\n-- Name: colors_id_seq; Type:
+    SEQUENCE SET; Schema: public; Owner: postgres\r\n--\r\n\r\nSELECT pg_catalog.setval('public.colors_id_seq',
+    6, true);\r\n\r\n\r\n--\r\n-- TOC entry 5088 (class 0 OID 0)\r\n-- Dependencies:
+    231\r\n-- Name: discounts_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres\r\n--\r\n\r\nSELECT
+    pg_catalog.setval('public.discounts_id_seq', 21, true);\r\n\r\n\r\n--\r\n-- TOC
+    entry 5089 (class 0 OID 0)\r\n-- Dependencies: 221\r\n-- Name: genders_id_seq;
+    Type: SEQUENCE SET; Schema: public; Owner: postgres\r\n--\r\n\r\nSELECT pg_catalog.setval('public.genders_id_seq',
+    4, true);\r\n\r\n\r\n--\r\n-- TOC entry 5090 (class 0 OID 0)\r\n-- Dependencies:
+    242\r\n-- Name: order_items_id_seq; Type: SEQUENCE SET; Schema: public; Owner:
+    postgres\r\n--\r\n\r\nSELECT pg_catalog.setval('public.order_items_id_seq', 38,
+    true);\r\n\r\n\r\n--\r\n-- TOC entry 5091 (class 0 OID 0)\r\n-- Dependencies:
+    240\r\n-- Name: orders_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres\r\n--\r\n\r\nSELECT
+    pg_catalog.setval('public.orders_id_seq', 34, true);\r\n\r\n\r\n--\r\n-- TOC entry
+    5092 (class 0 OID 0)\r\n-- Dependencies: 229\r\n-- Name: product_variants_id_seq;
+    Type: SEQUENCE SET; Schema: public; Owner: postgres\r\n--\r\n\r\nSELECT pg_catalog.setval('public.product_variants_id_seq',
+    13, true);\r\n\r\n\r\n--\r\n-- TOC entry 5093 (class 0 OID 0)\r\n-- Dependencies:
+    227\r\n-- Name: products_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres\r\n--\r\n\r\nSELECT
+    pg_catalog.setval('public.products_id_seq', 31, true);\r\n\r\n\r\n--\r\n-- TOC
+    entry 5094 (class 0 OID 0)\r\n-- Dependencies: 234\r\n-- Name: roles_id_seq; Type:
+    SEQUENCE SET; Schema: public; Owner: postgres\r\n--\r\n\r\nSELECT pg_catalog.setval('public.roles_id_seq',
+    4, true);\r\n\r\n\r\n--\r\n-- TOC entry 5095 (class 0 OID 0)\r\n-- Dependencies:
+    223\r\n-- Name: sizes_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres\r\n--\r\n\r\nSELECT
+    pg_catalog.setval('public.sizes_id_seq', 6, true);\r\n\r\n\r\n--\r\n-- TOC entry
+    5096 (class 0 OID 0)\r\n-- Dependencies: 236\r\n-- Name: users_id_seq; Type: SEQUENCE
+    SET; Schema: public; Owner: postgres\r\n--\r\n\r\nSELECT pg_catalog.setval('public.users_id_seq',
+    29, true);\r\n\r\n\r\n-- Completed on 2026-02-21 02:44:06\r\n\r\n--\r\n-- PostgreSQL
+    database dump complete\r\n--\r\nSET session_replication_role = origin;\r\n"
+kind: ConfigMap
+metadata:
+  creationTimestamp: null
+  name: db-init-sql

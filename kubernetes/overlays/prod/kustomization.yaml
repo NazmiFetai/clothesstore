@@ -1,0 +1,14 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: clothesstore-prod
+
+resources:
+  - ../../base
+  - namespace.yaml
+  - hpa-web.yaml
+
+patchesStrategicMerge:
+  - patches/web-image.yaml
+  - patches/web-resources.yaml
+  - patches/web-replicas.yaml

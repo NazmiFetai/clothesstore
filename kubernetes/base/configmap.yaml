@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: clothesstore-config
+data:
+  NODE_ENV: "production"
+  # If your app uses a base URL, keep internal service DNS:
+  NEXT_PUBLIC_API_BASE_URL: "http://web"

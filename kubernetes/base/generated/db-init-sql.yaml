@@ -4,7 +4,7 @@ data:
     version 17.4\r\n-- Dumped by pg_dump version 17.4\r\n\r\n-- Started on 2026-02-21
     02:43:26\r\n\r\nSET statement_timeout = 0;\r\nSET lock_timeout = 0;\r\nSET idle_in_transaction_session_timeout
     = 0;\r\nSET client_encoding = 'UTF8';\r\nSET standard_conforming_strings = on;\r\nSELECT
-    pg_catalog.set_config('search_path', '', false);\r\nSET check_function_bodies
+    pg_catalog.set_config('search_path', 'public', false);\r\nSET check_function_bodies
     = false;\r\nSET xmloption = content;\r\nSET client_min_messages = warning;\r\nSET
     row_security = off;\r\n\r\n--\r\n-- TOC entry 900 (class 1247 OID 25686)\r\n--
     Name: discount_type; Type: TYPE; Schema: public; Owner: postgres\r\n--\r\n\r\nCREATE

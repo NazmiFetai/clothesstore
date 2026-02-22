@@ -1,6 +1,7 @@
 ﻿apiVersion: v1
 data:
-  01-schema.sql: "--\r\n-- PostgreSQL database dump\r\n--\r\n\r\n-- Dumped from database
+  01-schema.sql:
+    "--\r\n-- PostgreSQL database dump\r\n--\r\n\r\n-- Dumped from database
     version 17.4\r\n-- Dumped by pg_dump version 17.4\r\n\r\n-- Started on 2026-02-21
     02:43:26\r\n\r\nSET statement_timeout = 0;\r\nSET lock_timeout = 0;\r\nSET idle_in_transaction_session_timeout
     = 0;\r\nSET client_encoding = 'UTF8';\r\nSET standard_conforming_strings = on;\r\nSELECT
@@ -451,7 +452,8 @@ data:
     \   ADD CONSTRAINT users_role_id_fkey FOREIGN KEY (role_id) REFERENCES public.roles(id)
     ON DELETE SET NULL;\r\n\r\n\r\n-- Completed on 2026-02-21 02:43:27\r\n\r\n--\r\n--
     PostgreSQL database dump complete\r\n--\r\n\r\n"
-  02-seed.sql: "--\r\n-- PostgreSQL database dump\r\n--\r\n-- Dumped from database
+  02-seed.sql:
+    "--\r\n-- PostgreSQL database dump\r\n--\r\n-- Dumped from database
     version 17.4\r\n-- Dumped by pg_dump version 17.4\r\n--\r\n\r\n-- Make imports
     stable across Postgres 16/17\r\nSET statement_timeout = 0;\r\nSET lock_timeout
     = 0;\r\nSET idle_in_transaction_session_timeout = 0;\r\n-- NOTE: Postgres 16 does
@@ -652,5 +654,4 @@ data:
     database dump complete\r\n--\r\nSET session_replication_role = origin;\r\n"
 kind: ConfigMap
 metadata:
-  creationTimestamp: null
   name: db-init-sql

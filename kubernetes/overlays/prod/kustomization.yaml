@@ -8,7 +8,7 @@ resources:
   - namespace.yaml
   - hpa-web.yaml
 
-patchesStrategicMerge:
-  - patches/web-image.yaml
-  - patches/web-resources.yaml
-  - patches/web-replicas.yaml
+patches:
+  - path: patches/web-image.yaml
+  - path: patches/web-resources.yaml
+  - path: patches/web-replicas.yaml

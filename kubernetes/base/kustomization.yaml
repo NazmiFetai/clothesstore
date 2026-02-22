@@ -10,3 +10,4 @@ resources:
   - secret.yaml
   - limitrange.yaml
   - generated/db-init-sql.yaml
+  - vpa-web.yaml

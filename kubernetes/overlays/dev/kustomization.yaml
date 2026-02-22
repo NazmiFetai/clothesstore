@@ -7,9 +7,10 @@ resources:
   - ../../base
   - namespace.yaml
   - quota.yaml
-  - debug-pod.yaml
 
-patchesStrategicMerge:
-  - patches/web-image.yaml
-  - patches/web-resources.yaml
-  - patches/web-replicas.yaml
+patches:
+  - path: patches/web-image.yaml
+  - path: patches/web-resources.yaml
+  - path: patches/web-replicas.yaml
+  - path: patches/postgres-resources.yaml
+  - path: patches/web-strategy.yaml

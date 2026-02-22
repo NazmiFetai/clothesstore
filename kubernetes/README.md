@@ -1,4 +1,4 @@
-# ClothesStore — Kubernetes Deployment Runbook (Teacher)
+# ClothesStore — Kubernetes Deployment Runbook
 
 This repo deploys a multi-component web application (web + PostgreSQL) into Kubernetes across three isolated environments:
 
